@@ -4022,11 +4022,17 @@ namespace Microsoft.FSharp.Core
         [<CompiledName("NaN")>]
         let nan          = System.Double.NaN 
 
+        [<CompiledName("CheckFiniteDouble")>]
+        let inline ckfinite (x:float) = (# "ckfinite" x : float #)
+
         [<CompiledName("InfinitySingle")>]
         let infinityf     = System.Single.PositiveInfinity
 
         [<CompiledName("NaNSingle")>]
         let nanf          = System.Single.NaN 
+
+        [<CompiledName("CheckFiniteSingle")>]
+        let inline ckfinitef (x:float32) = (# "ckfinite" x : float32 #)
 
         [<NoDynamicInvocation>]
         [<CompiledName("ToUInt64")>]

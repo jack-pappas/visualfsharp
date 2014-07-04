@@ -2192,6 +2192,14 @@ namespace Microsoft.FSharp.Core
         [<CompiledName("NaN")>]
         val nan: float
 
+        /// <summary>Checks whether a double-precision floating-point value is a
+        /// finite real number and raises an exception if it is not.</summary>
+        /// <param name="value">The value to check.</param>
+        /// <returns>The unmodified input value, if it is a finite real number.</summary>
+        /// <exception cref="T:System.ArithmeticException"><paramref name="value"/> is a <c>NaN</c> or an infinity</exception>
+        [<CompiledName("CheckFiniteDouble")>]
+        val inline ckfinite : float -> float
+
         /// <summary>Equivalent to <c>System.Single.PositiveInfinity</c></summary>
         [<CompiledName("InfinitySingle")>]
         val infinityf: float32
@@ -2199,6 +2207,15 @@ namespace Microsoft.FSharp.Core
         /// <summary>Equivalent to <c>System.Single.NaN</c></summary>
         [<CompiledName("NaNSingle")>]
         val nanf: float32
+
+        /// <summary>Checks whether a single-precision floating-point value is a
+        /// finite real number and raises an exception if it is not.</summary>
+        /// <param name="value">The value to check.</param>
+        /// <returns>The unmodified input value, if it is a finite real number.</summary>
+        /// <exception cref="T:System.ArithmeticException"><paramref name="value"/> is a <c>NaN</c> or an infinity</exception>
+        [<CompiledName("CheckFiniteSingle")>]
+        val inline ckfinitef : float32 -> float32
+
 #if FX_NO_SYSTEM_CONSOLE
 #else
         /// <summary>Reads the value of the property <c>System.Console.In</c>. </summary>
