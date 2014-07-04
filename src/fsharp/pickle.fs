@@ -1064,6 +1064,10 @@ let itag_ldelem_any    = 59
 let itag_stelem_any    = 60
 let itag_unbox_any     = 61
 let itag_ldlen_multi   = 62
+let itag_initobj       = 63
+let itag_initblk       = 64
+let itag_cpobj         = 65
+let itag_cpblk         = 66
 
 let simple_instrs = 
     [ itag_add,        AI_add;
@@ -1098,7 +1102,10 @@ let simple_instrs =
       itag_localloc,   I_localloc;
       itag_throw,      I_throw;
       itag_ldlen,      I_ldlen;
-      itag_rethrow,    I_rethrow;    ]
+      itag_rethrow,    I_rethrow;
+      itag_initblk,    I_initblk (Aligned,Nonvolatile);
+      itag_cpblk,      I_cpblk (Aligned,Nonvolatile);
+      ]
 
 let encode_table = Dictionary<_,_>(300, HashIdentity.Structural)
 let _ = List.iter (fun (icode,i) -> encode_table.[i] <- icode) simple_instrs
@@ -1134,7 +1141,9 @@ let decoders =
      itag_stobj,       u_ILType                            >> (fun c -> I_stobj (Aligned,Nonvolatile,c));
      itag_sizeof,      u_ILType                            >> I_sizeof;
      itag_ldlen_multi, u_tup2 u_int32 u_int32              >> (fun (a,b) -> EI_ldlen_multi (a,b));
-     itag_ilzero,      u_ILType                            >> EI_ilzero; ] 
+     itag_ilzero,      u_ILType                            >> EI_ilzero;
+     itag_initobj,     u_ILType                            >> I_initobj;
+     itag_cpobj,       u_ILType                            >> I_cpobj; ] 
 
 let decode_tab = 
     let tab = Array.init 256 (fun n -> (fun st -> ufailwith st ("no decoder for instruction "+string n)))
@@ -1179,6 +1188,8 @@ let p_ILInstr x st =
     | I_sizeof  ty                    -> p_byte itag_sizeof st;      p_ILType ty st
     | EI_ldlen_multi (n,m)            -> p_byte itag_ldlen_multi st; p_tup2 p_int32 p_int32 (n,m) st
     | EI_ilzero a                     -> p_byte itag_ilzero st;      p_ILType a st
+    | I_initobj c                     -> p_byte itag_initobj st;     p_ILType c st
+    | I_cpobj c                       -> p_byte itag_cpobj st;       p_ILType c st
     | i -> pfailwith st (sprintf "the IL instruction '%+A' cannot be emitted" i) 
 #endif
 
