@@ -38,7 +38,6 @@ namespace Microsoft.FSharp.NativeInterop
         /// <returns>The machine address.</returns>
         val inline toNativeInt : address:nativeptr<'T> -> nativeint
 
-
         [<Unverifiable>]
         [<NoDynamicInvocation>]
         [<CompiledName("AddPointerInlined")>]
@@ -93,26 +92,39 @@ namespace Microsoft.FSharp.NativeInterop
         [<CompiledName("StackAllocate")>]
         val inline stackalloc : count:int -> nativeptr<'T>
 
-        /// <summary></summary>
-        /// <param name="address"></param>
+        /// <summary>Initializes the memory location referenced by the typed native pointer
+        /// <paramref name="address"/> with the default value of type 'T.</summary>
+        /// <param name="address">The input pointer.</param>
         [<Unverifiable>]
         [<NoDynamicInvocation>]
         [<CompiledName("InitializePointerInlined")>]
         val inline init : address:nativeptr<'T> -> unit
-
-        /// <summary></summary>
-        /// <param name="destAddress"></param>
-        /// <param name="srcAddress"></param>
+        
+        /// <summary>Copies a value from the memory location <paramref name="srcAddress"/>
+        /// to the memory location specified by <paramref name="dstAddress"/>.</summary>
+        /// <param name="dstAddress">The destination pointer.</param>
+        /// <param name="srcAddress">The source pointer.</param>
         [<Unverifiable>]
         [<NoDynamicInvocation>]
         [<CompiledName("CopyPointerInlined")>]
-        val inline copy : destAddress:nativeptr<'T> -> srcAddress:nativeptr<'T> -> unit
+        val inline copy : dstAddress:nativeptr<'T> -> srcAddress:nativeptr<'T> -> unit
 
-        /// <summary></summary>
-        /// <param name="destAddress"></param>
-        /// <param name="srcAddress"></param>
-        /// <param name="count"></param>
+        /// <summary>Copies a block of values starting at the memory location <paramref name="srcAddress"/>
+        /// to the memory location <paramref name="dstAddress"/>.</summary>
+        /// <param name="dstAddress">The destination pointer.</param>
+        /// <param name="srcAddress">The source pointer.</param>
+        /// <param name="count">The number of values of type T to copy.</param>
         [<Unverifiable>]
         [<NoDynamicInvocation>]
         [<CompiledName("CopyBlockInlined")>]
-        val inline copyBlock : destAddress:nativeptr<'T> -> srcAddress:nativeptr<'T> -> count:int -> unit
+        val inline copyBlock : dstAddress:nativeptr<'T> -> srcAddress:nativeptr<'T> -> count:uint32 -> unit
+
+        /// <summary>Fills a contiguous block of bytes with a specified value, beginning at the
+        /// memory location referenced by the untyped native pointer <paramref name="address"/>.</summary>
+        /// <param name="address">The input pointer.</param>
+        /// <param name="value">The value to assign.</param>
+        /// <param name="size">The number of bytes to fill with <paramref name="value"/>.</param>
+        [<Unverifiable>]
+        [<NoDynamicInvocation>]
+        [<CompiledName("FillPointerInlined")>]
+        val inline fill : address:nativeint -> value:byte -> size:uint32 -> unit

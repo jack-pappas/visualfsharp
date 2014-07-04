@@ -65,15 +65,22 @@ module NativePtr =
     [<CompiledName("InitializePointerInlined")>]
     let inline init (p : nativeptr<'T>) =
         (# "initobj !0" type ('T) p #)
-
+        
     [<Unverifiable>]
     [<NoDynamicInvocation>]
     [<CompiledName("CopyPointerInlined")>]
-    let inline copy (destPtr : nativeptr<'T>) (srcPtr : nativeptr<'T>) =
-        (# "cpobj !0" type ('T) destPtr srcPtr #)
+    let inline copy (dstPtr : nativeptr<'T>) (srcPtr : nativeptr<'T>) =
+        (# "cpobj !0" type ('T) dstPtr srcPtr #)
 
     [<Unverifiable>]
     [<NoDynamicInvocation>]
     [<CompiledName("CopyBlockInlined")>]
-    let inline copyBlock (destPtr : nativeptr<'T>) (srcPtr : nativeptr<'T>) (count : int) =
-        (# "cpblk" destPtr srcPtr (count * sizeof<'T>) #)
+    let inline copyBlock (dstPtr : nativeptr<'T>) (srcPtr : nativeptr<'T>) (count : uint32) =
+        (# "cpblk" dstPtr srcPtr (count * uint32 sizeof<'T>) #)
+
+    [<Unverifiable>]
+    [<NoDynamicInvocation>]
+    [<CompiledName("FillPointerInlined")>]
+    let inline fill (p : nativeint) (value : byte) (size : uint32) =
+        (# "initblk" p value size #)
+        
