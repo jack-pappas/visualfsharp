@@ -16,7 +16,17 @@ open System.Runtime.InteropServices
 [<RequireQualifiedAccess>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module NativePtr = 
+    [<GeneralizableValue>]
+    [<NoDynamicInvocation>]
+    [<CompiledName("Zero")>]
+    let inline zero<'T when 'T : unmanaged> : nativeptr<'T> =
+       (# "ldnull" : nativeptr<'T> #)
 
+    [<Unverifiable>]
+    [<NoDynamicInvocation>]
+    [<CompiledName("IsNull")>]
+    let inline isNull<'T when 'T : unmanaged> (ptr : nativeptr<'T>) =
+        (# "ceq" zero<'T> ptr : bool #)
 
     [<NoDynamicInvocation>]
     [<CompiledName("OfNativeIntInlined")>]
@@ -50,3 +60,20 @@ module NativePtr =
     [<CompiledName("StackAllocate")>]
     let inline stackalloc (count:int) : nativeptr<'T> = (# "localloc" (count * sizeof<'T>) : nativeptr<'T> #)
 
+    [<Unverifiable>]
+    [<NoDynamicInvocation>]
+    [<CompiledName("InitializePointerInlined")>]
+    let inline init (p : nativeptr<'T>) =
+        (# "initobj !0" type ('T) p #)
+
+    [<Unverifiable>]
+    [<NoDynamicInvocation>]
+    [<CompiledName("CopyPointerInlined")>]
+    let inline copy (destPtr : nativeptr<'T>) (srcPtr : nativeptr<'T>) =
+        (# "cpobj !0" type ('T) destPtr srcPtr #)
+
+    [<Unverifiable>]
+    [<NoDynamicInvocation>]
+    [<CompiledName("CopyBlockInlined")>]
+    let inline copyBlock (destPtr : nativeptr<'T>) (srcPtr : nativeptr<'T>) (count : int) =
+        (# "cpblk" destPtr srcPtr (count * sizeof<'T>) #)

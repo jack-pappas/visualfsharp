@@ -10,6 +10,17 @@ namespace Microsoft.FSharp.NativeInterop
     /// <summary>Contains operations on native pointers. Use of these operators may
     /// result in the generation of unverifiable code.</summary>
     module NativePtr =
+        /// <summary>The null typed native pointer.</summary>
+        [<GeneralizableValue>]
+        [<NoDynamicInvocation>]
+        [<CompiledName("Zero")>]
+        val inline zero<'T when 'T : unmanaged> : nativeptr<'T>
+
+        /// <summary>Determines if a typed native pointer is null.</summary>
+        [<Unverifiable>]
+        [<NoDynamicInvocation>]
+        [<CompiledName("IsNull")>]
+        val inline isNull : address:nativeptr<'T> -> bool
 
         [<Unverifiable>]
         [<NoDynamicInvocation>]
@@ -81,3 +92,27 @@ namespace Microsoft.FSharp.NativeInterop
         [<NoDynamicInvocation>]
         [<CompiledName("StackAllocate")>]
         val inline stackalloc : count:int -> nativeptr<'T>
+
+        /// <summary></summary>
+        /// <param name="address"></param>
+        [<Unverifiable>]
+        [<NoDynamicInvocation>]
+        [<CompiledName("InitializePointerInlined")>]
+        val inline init : address:nativeptr<'T> -> unit
+
+        /// <summary></summary>
+        /// <param name="destAddress"></param>
+        /// <param name="srcAddress"></param>
+        [<Unverifiable>]
+        [<NoDynamicInvocation>]
+        [<CompiledName("CopyPointerInlined")>]
+        val inline copy : destAddress:nativeptr<'T> -> srcAddress:nativeptr<'T> -> unit
+
+        /// <summary></summary>
+        /// <param name="destAddress"></param>
+        /// <param name="srcAddress"></param>
+        /// <param name="count"></param>
+        [<Unverifiable>]
+        [<NoDynamicInvocation>]
+        [<CompiledName("CopyBlockInlined")>]
+        val inline copyBlock : destAddress:nativeptr<'T> -> srcAddress:nativeptr<'T> -> count:int -> unit
