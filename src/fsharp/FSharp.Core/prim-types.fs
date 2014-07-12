@@ -3521,7 +3521,7 @@ namespace Microsoft.FSharp.Core
         let inline box   (x:'T)  = (# "box !0"       type ('T) x : obj #)
 
         [<CompiledName("Raise")>]
-        let raise (e: exn) = (# "throw" e : 'T #)
+        let inline raise (e: exn) = (# "throw" e : 'T #)
 
         let Failure message = new System.Exception(message)
         
@@ -3555,7 +3555,7 @@ namespace Microsoft.FSharp.Core
 *)
 
         [<CompiledName("FailWith")>]
-        let failwith message = raise (Failure(message))
+        let inline failwith message = raise (Failure(message))
 
 
         [<CompiledName("InvalidArg")>]
