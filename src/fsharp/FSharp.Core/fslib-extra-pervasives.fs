@@ -29,14 +29,9 @@ module ExtraTopLevelOperators =
 
     [<CompiledName("CreateSet")>]
     let set l = Collections.Set.ofSeq l
-
-    [<CompiledName("CreateDictionary")>]
-    let dict l = 
-        // Use a dictionary (this requires hashing and equality on the key type)
-        // Wrap keys in a StructBox in case they are null (when System.Collections.Generic.Dictionary fails). 
-        let t = new Dictionary<RuntimeHelpers.StructBox<'Key>,_>(RuntimeHelpers.StructBox<'Key>.Comparer)
-        for (k,v) in l do 
-            t.[RuntimeHelpers.StructBox(k)] <- v
+    
+    /// Creates a read-only wrapper around a mutable dictionary.
+    let private readOnlyDict (t : Dictionary<RuntimeHelpers.StructBox<'Key>, 'T>) : IDictionary<'Key, 'T> =
         let d = (t :> IDictionary<_,_>)
         let c = (t :> ICollection<_>)
         // Give a read-only view of the dictionary
@@ -51,9 +46,9 @@ module ExtraTopLevelOperators =
                           member s.Clear() = raise (NotSupportedException(SR.GetString(SR.thisValueCannotBeMutated)));
                           member s.Remove(x) = raise (NotSupportedException(SR.GetString(SR.thisValueCannotBeMutated)));
                           member s.Contains(x) = keys.Contains(RuntimeHelpers.StructBox(x))
-                          member s.CopyTo(arr,i) = 
-                              let mutable n = 0 
-                              for k in keys do 
+                          member s.CopyTo(arr,i) =
+                              let mutable n = 0
+                              for k in keys do
                                   arr.[i+n] <- k.Value
                                   n <- n + 1
                           member s.IsReadOnly = true
@@ -68,7 +63,7 @@ module ExtraTopLevelOperators =
                 member s.ContainsKey(k) = d.ContainsKey(RuntimeHelpers.StructBox(k))
                 member s.TryGetValue(k,r) = 
                     let key = RuntimeHelpers.StructBox(k)
-                    if d.ContainsKey(key) then (r <- d.[key]; true) else false
+                    d.TryGetValue (key, &r)
                 member s.Remove(k : 'Key) = (raise (NotSupportedException(SR.GetString(SR.thisValueCannotBeMutated))) : bool) 
           interface ICollection<KeyValuePair<'Key, 'T>> with 
                 member s.Add(x) = raise (NotSupportedException(SR.GetString(SR.thisValueCannotBeMutated)));
@@ -88,7 +83,99 @@ module ExtraTopLevelOperators =
           interface System.Collections.IEnumerable with
                 member s.GetEnumerator() = 
                     ((c |> Seq.map (fun (KeyValue(k,v)) -> KeyValuePair<_,_>(k.Value,v))) :> System.Collections.IEnumerable).GetEnumerator() }
+                    
+    /// An empty, read-only dictionary.
+    /// This field is used to avoid (potentially) creating multiple empty dictionary instances;
+    /// having only one empty dictionary instance helps make better use of structure-sharing.
+    let private emptyDict<'Key, 'T when 'Key : equality> : IDictionary<'Key, 'T> =
+        Dictionary<RuntimeHelpers.StructBox<'Key>, 'T> (0, RuntimeHelpers.StructBox<'Key>.Comparer)
+        |> readOnlyDict
 
+    [<CompiledName("CreateDictionary")>]
+    let dict (keyValuePairs : seq<'Key * 'Value>) =
+        checkNonNullNullArg "keyValuePairs" keyValuePairs
+
+        // Use a dictionary (this requires hashing and equality on the key type)
+        // Wrap keys in a StructBox in case they are null (when System.Collections.Generic.Dictionary fails).
+        // Try to use an optimized implementation based on the input type.
+        match keyValuePairs with
+        | :? (('Key * 'Value)[]) as kvpArray ->
+            match kvpArray.Length with
+            | 0 -> emptyDict
+            | len ->
+                let t = Dictionary<RuntimeHelpers.StructBox<'Key>,_>(kvpArray.Length, RuntimeHelpers.StructBox<'Key>.Comparer)
+
+                for i = 0 to len - 1 do
+                    let k, v = kvpArray.[i]
+                    t.[RuntimeHelpers.StructBox(k)] <- v
+                readOnlyDict t
+
+        | :? (('Key * 'Value) list) as kvpList ->
+            if kvpList.IsEmpty then
+                emptyDict
+            else
+                // List.count is O(n)! However, it should still be faster than (potentially) resizing the dictionary.
+                let t = Dictionary<RuntimeHelpers.StructBox<'Key>,_>(kvpList.Length, RuntimeHelpers.StructBox<'Key>.Comparer)
+
+                let mutable kvpList = kvpList
+                while not kvpList.IsEmpty do
+                    let k, v = kvpList.Head
+                    t.[RuntimeHelpers.StructBox(k)] <- v
+                    kvpList <- kvpList.Tail
+                readOnlyDict t
+
+        | :? IList<'Key * 'Value> as kvpList ->
+            match kvpList.Count with
+            | 0 -> emptyDict
+            | len ->
+                let t = Dictionary<RuntimeHelpers.StructBox<'Key>,_>(kvpList.Count, RuntimeHelpers.StructBox<'Key>.Comparer)
+
+                for i = 0 to len - 1 do
+                    let k, v = kvpList.[i]
+                    t.[RuntimeHelpers.StructBox(k)] <- v
+                readOnlyDict t
+
+        | :? ICollection<'Key * 'Value> as kvpColl ->
+            match kvpColl.Count with
+            | 0 -> emptyDict
+            | count ->
+                let t = Dictionary<RuntimeHelpers.StructBox<'Key>,_>(count, RuntimeHelpers.StructBox<'Key>.Comparer)
+                for (k,v) in keyValuePairs do 
+                    t.[RuntimeHelpers.StructBox(k)] <- v
+                readOnlyDict t
+                
+#if FX_ATLEAST_45
+        | :? IReadOnlyList<'Key * 'Value> as kvpList ->
+            match kvpList.Count with
+            | 0 -> emptyDict
+            | len ->
+                let t = Dictionary<RuntimeHelpers.StructBox<'Key>,_>(kvpList.Count, RuntimeHelpers.StructBox<'Key>.Comparer)
+
+                for i = 0 to len - 1 do
+                    let k, v = kvpList.[i]
+                    t.[RuntimeHelpers.StructBox(k)] <- v
+                readOnlyDict t
+                
+        | :? IReadOnlyCollection<'Key * 'Value> as kvpColl ->
+            match kvpColl.Count with
+            | 0 -> emptyDict
+            | count ->
+                let t = Dictionary<RuntimeHelpers.StructBox<'Key>,_>(count, RuntimeHelpers.StructBox<'Key>.Comparer)
+                for (k,v) in keyValuePairs do 
+                    t.[RuntimeHelpers.StructBox(k)] <- v
+                readOnlyDict t
+#endif
+
+        | _ ->
+            let t = Dictionary<RuntimeHelpers.StructBox<'Key>,_>(RuntimeHelpers.StructBox<'Key>.Comparer)
+            for (k, v) in keyValuePairs do
+                t.[RuntimeHelpers.StructBox(k)] <- v
+            
+            // If the created dictionary is empty (because the input sequence was empty), return 'emptyDict';
+            // this avoids the need to use Seq.isEmpty (which can cause problems if it has to partially or wholly
+            // evaluate the sequence just to determine if it's empty, then evaluate again to create the dictionary).
+            if t.Count = 0 then emptyDict
+            else readOnlyDict t
 
     let getArray (vals : seq<'T>) = 
         match vals with
