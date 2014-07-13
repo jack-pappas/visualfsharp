@@ -31,11 +31,11 @@ module ExtraTopLevelOperators =
     let set l = Collections.Set.ofSeq l
     
     /// Creates a read-only wrapper around a mutable dictionary.
-    let private readOnlyDict (t : Dictionary<RuntimeHelpers.StructBox<'Key>, 'T>) : IDictionary<'Key, 'T> =
+    let private readOnlyDict (t : Dictionary<RuntimeHelpers.StructBox<'Key>, 'Value>) : IDictionary<'Key, 'Value> =
         let d = (t :> IDictionary<_,_>)
         let c = (t :> ICollection<_>)
         // Give a read-only view of the dictionary
-        { new IDictionary<'Key, 'T> with 
+        { new IDictionary<'Key, 'Value> with 
                 member s.Item 
                     with get x = d.[RuntimeHelpers.StructBox(x)]
                     and  set x v = raise (NotSupportedException(SR.GetString(SR.thisValueCannotBeMutated)))
@@ -65,7 +65,7 @@ module ExtraTopLevelOperators =
                     let key = RuntimeHelpers.StructBox(k)
                     d.TryGetValue (key, &r)
                 member s.Remove(k : 'Key) = (raise (NotSupportedException(SR.GetString(SR.thisValueCannotBeMutated))) : bool) 
-          interface ICollection<KeyValuePair<'Key, 'T>> with 
+          interface ICollection<KeyValuePair<'Key, 'Value>> with 
                 member s.Add(x) = raise (NotSupportedException(SR.GetString(SR.thisValueCannotBeMutated)));
                 member s.Clear() = raise (NotSupportedException(SR.GetString(SR.thisValueCannotBeMutated)));
                 member s.Remove(x) = raise (NotSupportedException(SR.GetString(SR.thisValueCannotBeMutated)));
@@ -77,7 +77,7 @@ module ExtraTopLevelOperators =
                         n <- n + 1
                 member s.IsReadOnly = true
                 member s.Count = c.Count
-          interface IEnumerable<KeyValuePair<'Key, 'T>> with
+          interface IEnumerable<KeyValuePair<'Key, 'Value>> with
                 member s.GetEnumerator() = 
                     (c |> Seq.map (fun (KeyValue(k,v)) -> KeyValuePair<_,_>(k.Value,v))).GetEnumerator()
           interface System.Collections.IEnumerable with
