@@ -468,6 +468,7 @@ let internalFlags (tcConfigB:TcConfigBuilder) =
 #if DEBUG
     CompilerOption("debug-parse", tagNone, OptionUnit (fun () -> Internal.Utilities.Text.Parsing.Flags.debug <- true), Some(InternalCommandLineOption("--debug-parse", rangeCmdArgs)), None);
     CompilerOption("ilfiles", tagNone, OptionUnit (fun () -> tcConfigB.writeGeneratedILFiles <- true), Some(InternalCommandLineOption("--ilfiles", rangeCmdArgs)), None);
+    CompilerOption("launch-debugger", tagNone, OptionUnit (fun () -> System.Diagnostics.Debugger.Launch() |> ignore), Some(InternalCommandLineOption("--launch-debugger", rangeCmdArgs)), None);
 #endif
     CompilerOption("pause", tagNone, OptionUnit (fun () -> tcConfigB.pause <- true), Some(InternalCommandLineOption("--pause", rangeCmdArgs)), None);
     CompilerOption("detuple", tagNone, OptionInt (setFlag (fun v -> tcConfigB.doDetuple <- v)), Some(InternalCommandLineOption("--detuple", rangeCmdArgs)), None);
