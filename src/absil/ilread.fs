@@ -898,7 +898,10 @@ let mkCacheGeneric lowMem _inbase _nm _sz  =
             | null -> cache := new Dictionary<_,_>(11 (* sz:int *) ) 
             | _ -> ()
             !cache
-        if cache.ContainsKey idx then (incr count; cache.[idx])
+
+        let mutable res = Unchecked.defaultof<_>
+        if cache.TryGetValue (idx, &res) then
+            incr count; res
         else let res = f idx in cache.[idx] <- res; res 
 
 //-----------------------------------------------------------------------
@@ -2740,8 +2743,9 @@ and seekReadTopCode ctxt numtypars (sz:int) start seqpoints =
    let labelsOfRawOffsets = new Dictionary<_,_>(sz/2)
    let ilOffsetsOfLabels = new Dictionary<_,_>(sz/2)
    let tryRawToLabel rawOffset = 
-       if labelsOfRawOffsets.ContainsKey rawOffset then 
-           Some(labelsOfRawOffsets.[rawOffset])
+       let mutable label = Unchecked.defaultof<_>
+       if labelsOfRawOffsets.TryGetValue (rawOffset, &label) then
+           Some label
        else 
            None
 
@@ -2971,10 +2975,10 @@ and seekReadTopCode ctxt numtypars (sz:int) start seqpoints =
    // Finished reading instructions - mark the end of the instruction stream in case the PDB information refers to it. 
    markAsInstructionStart !curr ibuf.Count;
    // Build the function that maps from raw labels (offsets into the bytecode stream) to indexes in the AbsIL instruction stream 
-   let lab2pc lab = 
-       try
-          ilOffsetsOfLabels.[lab]
-       with :? KeyNotFoundException-> 
+   let lab2pc lab =
+       let mutable pc = Unchecked.defaultof<_>
+       if ilOffsetsOfLabels.TryGetValue (lab, &pc) then pc
+       else
           failwith ("branch destination "+formatCodeLabel lab+" not found in code")
 
    // Some offsets used in debug info refer to the end of an instruction, rather than the 
@@ -3185,11 +3189,12 @@ and seekReadMethodRVA ctxt (idx,nm,_internalcall,noinline,numtypars) rva =
                       end
                    
                     let key =  (tryStart, tryFinish)
-                    if sehMap.ContainsKey key then 
-                        let prev = sehMap.[key]
-                        sehMap.[key] <- (prev @ [clause])
-                    else 
-                        sehMap.[key] <- [clause])
+                    sehMap.[key] <-
+                        let mutable prev = Unchecked.defaultof<_>
+                        if sehMap.TryGetValue (key, &prev) then
+                            prev @ [clause]
+                        else
+                            [clause])
                   clauses;
                 Seq.fold  (fun acc (KeyValue(key,bs)) -> {exnRange=key; exnClauses=bs} :: acc)  [] sehMap
              seh := sehClauses;
@@ -3383,7 +3388,10 @@ let getPdbReader opts infile =
                                             documentType = Some (pdbDocumentGetType pdbdoc),
                                             file = url));
 
-              let docfun url = if tab.ContainsKey url then tab.[url] else failwith ("Document with URL "+url+" not found in list of documents in the PDB file")
+              let docfun url =
+                let mutable res = Unchecked.defaultof<_>
+                if tab.TryGetValue (url, &res) then res
+                else failwith ("Document with URL "+url+" not found in list of documents in the PDB file")
               Some (pdbr, docfun)
           with e -> dprintn ("* Warning: PDB file could not be read and will be ignored: "+e.Message); None         
 #endif

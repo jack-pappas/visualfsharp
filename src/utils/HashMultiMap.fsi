@@ -45,6 +45,9 @@ type internal HashMultiMap<'Key,'Value> =
     /// Lookup the given element in the table, returning the result as an Option
     member TryFind : 'Key      -> 'Value option
     
+    /// Lookup the given element in the table, returning the result by reference.
+    member TryGetValue : 'Key * byref<'Value> -> bool
+    
     /// Find all bindings for the given element in the table, if any
     member FindAll : 'Key      -> 'Value list
 

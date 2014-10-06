@@ -2563,10 +2563,11 @@ module ProvidedMethodCalls =
             // sub in the appropriate argument
             // REVIEW: "thisArg" pointer should be first, if present
             let vRaw = pe.PUntaint(id,m)
-            if not (varConv.ContainsKey vRaw) then
-                        let typeProviderDesignation = ExtensionTyping.DisplayNameOfTypeProvider (pe.TypeProvider, m)
-                        error(NumberedError(FSComp.SR.etIncorrectParameterExpression(typeProviderDesignation,vRaw.Name), m))
-            varConv.[vRaw]
+            let mutable res = Unchecked.defaultof<_>
+            if varConv.TryGetValue (vRaw, &res) then res
+            else
+                let typeProviderDesignation = ExtensionTyping.DisplayNameOfTypeProvider (pe.TypeProvider, m)
+                error(NumberedError(FSComp.SR.etIncorrectParameterExpression(typeProviderDesignation,vRaw.Name), m))
                 
         and exprToExpr expr =
             let _, (resExpr, _) = exprToExprAndWitness false expr

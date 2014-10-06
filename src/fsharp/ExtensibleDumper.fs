@@ -45,11 +45,11 @@ type internal ExtensibleDumper(x:obj) =
                                 let constr = constructors.[0]
                                 let parameters = constr.GetParameters()
                                 if parameters.Length = 1 then
-                                    dumpers.[o.GetType()] <- Some(dumperType,dumpMethod)
-                    dumpers.ContainsKey(o.GetType())       
+                                    dumpers.[dumpeeType] <- Some(dumperType,dumpMethod)
+                    dumpers.ContainsKey dumpeeType       
                            
-                if (not(TryAdd(o.GetType()))) then
-                    if (not(TryAdd(o.GetType().BaseType))) then 
+                if not(TryAdd dumpeeType) then
+                    if not(TryAdd(dumpeeType.BaseType)) then 
                         dumpers.[dumpeeType] <- None
                 ExtensibleDumper.Dump(o) // Show the message                                                    
                                     

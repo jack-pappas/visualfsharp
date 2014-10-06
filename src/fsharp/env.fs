@@ -1270,8 +1270,9 @@ let mkTcGlobals (compilingFslib,sysCcu,ilg,fslibCcu,directoryToResolveRelativePa
                 entries 
                 |> List.map (fun (nm,tcref,builder) -> nm, (fun tcref2 tinst -> if tyconRefEq tcref tcref2 then Some(builder tinst) else None)) 
                 |> Dictionary.ofList  
-            (fun tcref tinst -> 
-                 if dict.ContainsKey tcref.LogicalName then dict.[tcref.LogicalName] tcref tinst
+            (fun tcref tinst ->
+                 let mutable res = Unchecked.defaultof<_>
+                 if dict.TryGetValue (tcref.LogicalName, &res) then res tcref tinst
                  else None )  
         else
             // This map is for use in normal times (not building FSharp.Core.dll). It is indexed by tcref stamp which is 
@@ -1282,8 +1283,9 @@ let mkTcGlobals (compilingFslib,sysCcu,ilg,fslibCcu,directoryToResolveRelativePa
                 entries  
                 |> List.map (fun (_,tcref,builder) -> tcref.Stamp, builder) 
                 |> Dictionary.ofList 
-            (fun tcref2 tinst -> 
-                 if dict.ContainsKey tcref2.Stamp then Some(dict.[tcref2.Stamp] tinst)
+            (fun tcref2 tinst ->
+                 let mutable res = Unchecked.defaultof<_>
+                 if dict.TryGetValue (tcref2.Stamp, &res) then Some (res tinst)
                  else None)  
        end;
            

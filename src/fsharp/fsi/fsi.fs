@@ -84,7 +84,7 @@ module Utilities =
 
     let ignoreAllErrors f = try f() with _ -> ()
 
-let referencedAssemblies = Dictionary<string, DateTime>()
+let referencedAssemblies = Dictionary<string, DateTime>(System.StringComparer.Ordinal)
 
 //----------------------------------------------------------------------------
 // Timing support

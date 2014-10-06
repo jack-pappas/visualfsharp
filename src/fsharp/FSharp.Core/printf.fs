@@ -1238,10 +1238,10 @@ module internal PrintfImpl =
     type Cache<'T, 'State, 'Residue, 'Result>() =
         static let generate(fmt) = PrintfBuilder<'State, 'Residue, 'Result>().Build<'T>(fmt)        
 #if FSHARP_CORE_4_5
-        static let mutable map = System.Collections.Concurrent.ConcurrentDictionary<string, CachedItem<'T, 'State, 'Residue, 'Result>>()
+        static let mutable map = System.Collections.Concurrent.ConcurrentDictionary<string, CachedItem<'T, 'State, 'Residue, 'Result>>(System.StringComparer.Ordinal)
         static let getOrAddFunc = Func<_, _>(generate)
 #else
-        static let mutable map = Dictionary<string, CachedItem<'T, 'State, 'Residue, 'Result>>()
+        static let mutable map = Dictionary<string, CachedItem<'T, 'State, 'Residue, 'Result>>(System.StringComparer.Ordinal)
 #endif
 
         static let get(key : string) = 

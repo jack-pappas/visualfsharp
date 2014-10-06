@@ -106,7 +106,7 @@ let _ = assert (isSyntheticMask = mask64 isSyntheticShift isSyntheticBitCount)
 // This is just a standard unique-index table
 type FileIndexTable() = 
     let indexToFileTable = new ResizeArray<_>(11)
-    let fileToIndexTable = new Dictionary<string,int>(11)
+    let fileToIndexTable = new Dictionary<string,int>(11, System.StringComparer.Ordinal)
     member t.FileToIndex f = 
         let mutable res = 0 
         let ok = fileToIndexTable.TryGetValue(f,&res) 

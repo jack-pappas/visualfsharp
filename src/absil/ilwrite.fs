@@ -2005,11 +2005,12 @@ module Codebuf = begin
                           begin 
                             // Use the original offsets to compute if the branch is small or large.  This is 
                             // a safe approximation because code only gets smaller. 
-                            if not (origAvailBrFixups.ContainsKey tg) then 
-                                dprintn ("branch target " + formatCodeLabel tg + " not found in code");
-                            let origDest = 
-                                if origAvailBrFixups.ContainsKey tg then origAvailBrFixups.[tg]
-                                else 666666
+                            let origDest =
+                                let mutable origDest = Unchecked.defaultof<_>
+                                if origAvailBrFixups.TryGetValue (tg, &origDest) then origDest
+                                else
+                                    dprintn ("branch target " + formatCodeLabel tg + " not found in code");
+                                    666666
                             let origRelOffset = origDest - origEndOfInstr
                             -128 <= origRelOffset && origRelOffset <= 127
                           end 
@@ -2082,10 +2083,10 @@ module Codebuf = begin
       
       // Now apply the adjusted fixups in the new code 
       newReqdBrFixups |> List.iter (fun (newFixupLoc,endOfInstr,tg, small) ->
-            if not (newAvailBrFixups.ContainsKey tg) then 
+            let mutable n = Unchecked.defaultof<_>
+            if not (newAvailBrFixups.TryGetValue (tg, &n)) then
               failwith ("target "+formatCodeLabel tg+" not found in new fixups");
             try 
-                let n = newAvailBrFixups.[tg]
                 let relOffset = (n - endOfInstr)
                 if small then 
                     if Bytes.get newCode newFixupLoc <> 0x98 then failwith "br fixupsanity check failed";

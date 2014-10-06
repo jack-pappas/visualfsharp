@@ -364,7 +364,7 @@ namespace Microsoft.FSharp.Core
         module NumericLiteralI = 
 
             let tab64 = new System.Collections.Generic.Dictionary<int64,obj>()
-            let tabParse = new System.Collections.Generic.Dictionary<string,obj>()
+            let tabParse = new System.Collections.Generic.Dictionary<string,obj>(System.StringComparer.Ordinal)
             
             let FromInt64Dynamic (x64:int64) : obj = 
                 lock tab64 (fun () -> 

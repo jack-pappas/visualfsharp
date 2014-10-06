@@ -1062,12 +1062,13 @@ type PropKey = PropKey of string * ILTypes * ILThisConvention
 
 let AddPropertyDefToHash (m:range) (ht:Dictionary<PropKey,(int * ILPropertyDef)>) (pdef: ILPropertyDef) =
     let nm = PropKey(pdef.Name, pdef.Args, pdef.CallingConv)
-    if ht.ContainsKey nm then
-        let idx,pd = ht.[nm]
-        ht.[nm] <- (idx, MergePropertyPair m pd pdef)
-    else 
-        ht.[nm] <- (ht.Count, pdef)
-    
+    ht.[nm] <-
+        let mutable idx_pd = Unchecked.defaultof<_>
+        if ht.TryGetValue (nm, &idx_pd) then
+            let idx,pd = idx_pd
+            (idx, MergePropertyPair m pd pdef)
+        else 
+            (ht.Count, pdef)
 
 /// Merge a whole group of properties all at once 
 let MergePropertyDefs m ilPropertyDefs = 
@@ -1286,8 +1287,9 @@ type CodeGenBuffer(m:range,
     
     let rec computeCodeLabelToPC n lbl = 
         if n = System.Int32.MaxValue then error(InternalError("recursive label graph",m))
-        if codeLabelToCodeLabel.ContainsKey lbl then 
-            computeCodeLabelToPC (n+1) codeLabelToCodeLabel.[lbl]
+        let mutable nextLabel = Unchecked.defaultof<_>
+        if codeLabelToCodeLabel.TryGetValue (lbl, &nextLabel) then
+            computeCodeLabelToPC (n+1) nextLabel
         else
            codeLabelToPC.[lbl] 
     
@@ -2302,9 +2304,10 @@ and GenApp cenv cgbuf eenv (f,fty,tyargs,args,m) sequel =
   match (f,tyargs,args) with 
    (* Look for tailcall to turn into branch *)
   | (Expr.Val(v,_,_),_,_) when  
-       ((ListAssoc.containsKey cenv.g.valRefEq v eenv.innerVals) && 
+       (let maybeKind = ListAssoc.tryFind cenv.g.valRefEq v eenv.innerVals in
+        Option.isSome maybeKind && 
         not v.IsConstructor &&
-        let (kind,_) = ListAssoc.find cenv.g.valRefEq v eenv.innerVals
+        let (kind,_) = Option.get maybeKind
         (* when branch-calling methods we must have the right type parameters *)
         begin match kind with
           | BranchCallClosure _ -> true

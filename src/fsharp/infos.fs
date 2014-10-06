@@ -2974,8 +2974,9 @@ type PropertyCollector(g,amap,m,typ,optFilter,ad) =
                 pinfo1.IsDefiniteFSharpOverride = pinfo2.IsDefiniteFSharpOverride )
     let props = new System.Collections.Generic.Dictionary<PropInfo,PropInfo>(hashIdentity)
     let add pinfo =
-        if props.ContainsKey(pinfo) then 
-            match props.[pinfo], pinfo with 
+        let mutable prop = Unchecked.defaultof<_>
+        if props.TryGetValue (pinfo, &prop) then
+            match prop, pinfo with 
             | FSProp (_,typ,Some vref1,_), FSProp (_,_,_,Some vref2)
             | FSProp (_,typ,_,Some vref2), FSProp (_,_,Some vref1,_)  -> 
                 let pinfo = FSProp (g,typ,Some vref1,Some vref2)

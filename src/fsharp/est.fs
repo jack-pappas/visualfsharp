@@ -1276,7 +1276,8 @@ module internal ExtensionTyping =
                 staticParameters |> Array.map (fun sp -> 
                       let typeBeforeArgumentsName = typeBeforeArguments.PUntaint ((fun st -> st.Name),m)
                       let spName = sp.PUntaint ((fun sp -> sp.Name),m)
-                      if not (argSpecsTable.ContainsKey spName) then 
+                      let mutable arg = Unchecked.defaultof<_>
+                      if not (argSpecsTable.TryGetValue (spName, &arg)) then 
                           if sp.PUntaint ((fun sp -> sp.IsOptional),m) then 
                               match sp.PUntaint((fun sp -> sp.RawDefaultValue),m) with
                               | null -> error (Error(FSComp.SR.etStaticParameterRequiresAValue (spName, typeBeforeArgumentsName, typeBeforeArgumentsName, spName),range0))
@@ -1284,7 +1285,7 @@ module internal ExtensionTyping =
                           else
                               error(Error(FSComp.SR.etProvidedTypeReferenceMissingArgument(spName),range0))
                       else
-                          let arg = argSpecsTable.[spName]
+                          let arg = arg
                       
                           /// Find the name of the representation type for the static parameter
                           let spReprTypeName = 

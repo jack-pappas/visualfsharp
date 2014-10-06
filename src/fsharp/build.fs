@@ -3712,12 +3712,13 @@ type TcImports(tcConfigP:TcConfigProvider, initialResolutions:TcAssemblyResoluti
             match viewedScopeRef with
             | ILScopeRef.Module modref -> 
                 let key = modref.Name
-                if not (auxModTable.ContainsKey(key)) then
+                let mutable res = Unchecked.defaultof<_>
+                if auxModTable.TryGetValue (key, &res) then res
+                else
                     let resolution = tcConfig.ResolveLibWithDirectories CcuLoadFailureAction.RaiseError (AssemblyReference(m,key)) |> Option.get
                     let ilModule,_ = tcImports.OpenILBinaryModule(resolution.resolvedPath,m)
                     auxModTable.[key] <- ilModule
-                auxModTable.[key] 
-
+                    ilModule
             | _ -> 
                 error(InternalError("Unexpected ILScopeRef.Local or ILScopeRef.Assembly in exported type table",m))
 

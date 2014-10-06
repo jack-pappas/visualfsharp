@@ -140,7 +140,7 @@ module internal Microsoft.FSharp.Compiler.PrettyNaming
     let IsMangledOpName (n:string) = n.Length >= 3 && n.Substring(0,3) = "op_"     
                              
     let DecompileOpName = 
-      let t = new Dictionary<string,string>()
+      let t = new Dictionary<string,string>(System.StringComparer.Ordinal)
       for (x,y) in opNameTable do
           t.Add(y,x)
       fun n -> 

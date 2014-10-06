@@ -1081,11 +1081,12 @@ let CheckTopBinding cenv env (TBind(v,e,_) as bind) =
                 | _ -> true (* not hiddenRepr *)
 
             let kind = (if v.IsMember then "member" else "value")
-            let check skipValCheck nm = 
+            let check skipValCheck nm =
+                let mutable value = Unchecked.defaultof<_>
                 if not skipValCheck && 
                    v.IsModuleBinding && 
-                   tcref.ModuleOrNamespaceType.AllValsByLogicalName.ContainsKey(nm) && 
-                   not (valEq tcref.ModuleOrNamespaceType.AllValsByLogicalName.[nm] v) then
+                   tcref.ModuleOrNamespaceType.AllValsByLogicalName.TryGetValue(nm, &value) && 
+                   not (valEq value v) then
                     
                     error(Duplicate(kind,v.DisplayName,v.Range));
 
@@ -1202,12 +1203,13 @@ let CheckEntityDefn cenv env (tycon:Entity) =
 
         let immediateProps = GetImmediateIntrinsicPropInfosOfType (None,AccessibleFromSomewhere) cenv.g cenv.amap m typ
 
-        let getHash (hash:Dictionary<string,_>) nm = 
-             if hash.ContainsKey(nm) then hash.[nm] else []
+        let getHash (hash:Dictionary<string,_>) nm =
+             let mutable result = Unchecked.defaultof<_>
+             if hash.TryGetValue (nm, &result) then result else []
         
         // precompute methods grouped by MethInfo.LogicalName
         let hashOfImmediateMeths = 
-                let h = new Dictionary<string, _>()
+                let h = new Dictionary<string, _>(System.StringComparer.Ordinal)
                 for minfo in immediateMeths do
                     match h.TryGetValue minfo.LogicalName with
                     | true, methods -> 
@@ -1225,7 +1227,7 @@ let CheckEntityDefn cenv env (tycon:Entity) =
                         yield m
             ]
 
-        let hashOfImmediateProps = new Dictionary<string,_>()
+        let hashOfImmediateProps = new Dictionary<string,_>(System.StringComparer.Ordinal)
         for minfo in immediateMeths do
             let nm = minfo.LogicalName
             let m = (match minfo.ArbitraryValRef with None -> m | Some vref -> vref.DefinitionRange)
@@ -1304,7 +1306,7 @@ let CheckEntityDefn cenv env (tycon:Entity) =
             hashOfImmediateProps.[nm] <- pinfo::others
             
         if not (isInterfaceTy cenv.g typ) then
-            let hashOfAllVirtualMethsInParent = new Dictionary<string,_>()
+            let hashOfAllVirtualMethsInParent = new Dictionary<string,_>(System.StringComparer.Ordinal)
             for minfo in allVirtualMethsInParent do
                 let nm = minfo.LogicalName
                 let others = getHash hashOfAllVirtualMethsInParent nm

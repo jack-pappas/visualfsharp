@@ -1861,7 +1861,8 @@ let createTypeRef (visited : Dictionary<_,_>, created : Dictionary<_,_>) emEnv t
     and traverseTypeRef priority  tref = 
         let typB = envGetTypB emEnv tref
         if verbose2 then dprintf "- considering reference to type %s\n" typB.FullName;
-        if not (visited.ContainsKey(tref)) || visited.[tref] > priority then 
+        let mutable res = Unchecked.defaultof<_>
+        if not (visited.TryGetValue (tref, &res)) || res > priority then
             visited.[tref] <- priority;
             let tdef = envGetTypeDef emEnv tref
             if verbose2 then dprintf "- traversing type %s\n" typB.FullName;        

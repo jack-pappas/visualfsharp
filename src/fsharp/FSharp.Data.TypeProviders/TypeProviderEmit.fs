@@ -592,7 +592,9 @@ type ProvidedTypeDefinition(container:TypeContainer,className : string, baseType
                         match keylist with 
                         | [] -> ()
                         | key::rest -> 
-                            buckets.[key] <- (rest,v) :: (if buckets.ContainsKey key then buckets.[key] else []);
+                            buckets.[key] <-
+                                let mutable existingList = Unchecked.defaultof<_>
+                                (rest,v) :: (if buckets.TryGetValue (key, &existingList) then existingList else []);
 
                     [ for (KeyValue(key,items)) in buckets -> nodef key items ]
 
@@ -835,7 +837,8 @@ type ProvidedTypeDefinition(container:TypeContainer,className : string, baseType
               let rec convType (ty:Type) = 
                   match ty with 
                   | :? ProvidedTypeDefinition as ptd ->   
-                      if typeMap.ContainsKey ptd then typeMap.[ptd] :> Type else ty
+                      let mutable mappedTy = Unchecked.defaultof<_>
+                      if typeMap.TryGetValue (ptd, &mappedTy) then mappedTy :> Type else ty
                   | _ -> 
                       if ty.IsGenericType then ty.GetGenericTypeDefinition().MakeGenericType (Array.map convType (ty.GetGenericArguments()))
                       elif ty.HasElementType then 

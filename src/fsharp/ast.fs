@@ -2088,9 +2088,13 @@ type IParseState with
     member x.SynArgNameGenerator = 
         let key = "SynArgNameGenerator"
         let bls = x.LexBuffer.BufferLocalStore
-        if not (bls.ContainsKey key) then  
-            bls.[key] <- box (SynArgNameGenerator())
-        bls.[key] :?> SynArgNameGenerator
+        let mutable generator = Unchecked.defaultof<_>
+        if bls.TryGetValue (key, &generator) then
+            generator :?> SynArgNameGenerator
+        else
+            let newGenerator = SynArgNameGenerator ()
+            bls.Add (key, box newGenerator)
+            newGenerator
 
     /// Reset the generator used for compiler-generated argument names.
     member x.ResetSynArgNameGenerator() = x.SynArgNameGenerator.Reset()
@@ -2106,31 +2110,41 @@ module LexbufLocalXmlDocStore =
         lexbuf.BufferLocalStore.[xmlDocKey] <- box (XmlDocCollector())
 
     /// Called from the lexer to save a single line of XML doc comment.
-    let SaveXmlDocLine (lexbuf:Lexbuf, lineText, pos) = 
-        if not (lexbuf.BufferLocalStore.ContainsKey(xmlDocKey)) then 
-            lexbuf.BufferLocalStore.[xmlDocKey] <- box (XmlDocCollector())
-        let collector = unbox<XmlDocCollector>(lexbuf.BufferLocalStore.[xmlDocKey])
+    let SaveXmlDocLine (lexbuf:Lexbuf, lineText, pos) =
+        let collector =
+            let localStore = lexbuf.BufferLocalStore
+            let mutable value = Unchecked.defaultof<_>
+            if localStore.TryGetValue (xmlDocKey, &value) then
+                unbox<XmlDocCollector> value
+            else
+                let newValue = XmlDocCollector ()
+                localStore.Add (xmlDocKey, box newValue)
+                newValue
+
         collector.AddXmlDocLine (lineText, pos)
 
     /// Called from the parser each time we parse a construct that marks the end of an XML doc comment range,
     /// e.g. a 'type' declaration. The markerRange is the range of the keyword that delimits the construct.
     let GrabXmlDocBeforeMarker (lexbuf:Lexbuf, markerRange:range)  = 
-        if lexbuf.BufferLocalStore.ContainsKey(xmlDocKey) then 
-            PreXmlDoc.CreateFromGrabPoint(unbox<XmlDocCollector>(lexbuf.BufferLocalStore.[xmlDocKey]),markerRange.End)
+        let localStore = lexbuf.BufferLocalStore
+        let mutable value = Unchecked.defaultof<_>
+        if localStore.TryGetValue (xmlDocKey, &value) then
+            PreXmlDoc.CreateFromGrabPoint (unbox<XmlDocCollector> value, markerRange.End)
         else
             PreXmlDoc.Empty
-
 
    
 /// Generates compiler-generated names. Each name generated also includes the StartLine number of the range passed in
 /// at the point of first generation.
 type NiceNameGenerator() = 
 
-    let basicNameCounts = new Dictionary<string,int>(100)
+    let basicNameCounts = new Dictionary<string,int>(100, System.StringComparer.Ordinal)
 
     member x.FreshCompilerGeneratedName (name,m:range) =
         let basicName = GetBasicNameOfPossibleCompilerGeneratedName name
-        let n = (if basicNameCounts.ContainsKey basicName then basicNameCounts.[basicName] else 0) 
+        let n =
+            let mutable n = Unchecked.defaultof<_>
+            if basicNameCounts.TryGetValue (basicName, &n) then n else 0
         let nm = CompilerGeneratedNameSuffix basicName (string m.StartLine + (match n with 0 -> "" | n -> "-" + string n))
         basicNameCounts.[basicName] <- n+1
         nm
@@ -2144,17 +2158,20 @@ type NiceNameGenerator() =
 /// at the point of first generation.
 type StableNiceNameGenerator() = 
 
-    let names = new Dictionary<(string * int64),string>(100)
-    let basicNameCounts = new Dictionary<string,int>(100)
+    let names = new Dictionary<KeyValuePair<string, int64>, string>(100)
+    let basicNameCounts = new Dictionary<string,int>(100, System.StringComparer.Ordinal)
 
     member x.GetUniqueCompilerGeneratedName (name,m:range,uniq) =
         let basicName = GetBasicNameOfPossibleCompilerGeneratedName name
-        if names.ContainsKey (basicName,uniq) then
-            names.[(basicName,uniq)]
-        else 
-            let n = (if basicNameCounts.ContainsKey basicName then basicNameCounts.[basicName] else 0) 
+        let key = KeyValuePair (basicName, uniq)
+        let mutable res = Unchecked.defaultof<_>
+        if names.TryGetValue (key, &res) then res
+        else
+            let n =
+                let mutable n = Unchecked.defaultof<_>
+                if basicNameCounts.TryGetValue (basicName, &n) then n else 0
             let nm = CompilerGeneratedNameSuffix basicName (string m.StartLine + (match n with 0 -> "" | n -> "-" + string n))
-            names.[(basicName,uniq)] <- nm
+            names.[key] <- nm
             basicNameCounts.[basicName] <- n+1
             nm
 

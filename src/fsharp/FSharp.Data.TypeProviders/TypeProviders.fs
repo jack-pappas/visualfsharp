@@ -291,7 +291,9 @@ type public DataProviders(config:TypeProviderConfig) =
                 match path with 
                 | [] -> ()
                 | pathItem::rest -> 
-                    buckets.[pathItem] <- (rest,v) :: (if buckets.ContainsKey pathItem then buckets.[pathItem] else []);
+                    buckets.[pathItem] <-
+                        let mutable existingList = Unchecked.defaultof<_>
+                        (rest,v) :: (if buckets.TryGetValue (pathItem, &existingList) then existingList else []);
 
             [ for (KeyValue(key,items)) in buckets -> nodef key items ]
 

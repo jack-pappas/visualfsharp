@@ -2861,9 +2861,9 @@ let rec ResolvePartialLongIdentPrim (ncenv: NameResolver) (nenv: NameResolutionE
                 [])
         // Look for values called 'id' that accept the dot-notation 
         let values,isItemVal = 
-            (if nenv.eUnqualifiedItems.ContainsKey(id) then 
+            (let mutable v = Unchecked.defaultof<_> in
+             if nenv.eUnqualifiedItems.TryGetValue (id, &v) then
                      // v.lookup : member of a value
-              let v = nenv.eUnqualifiedItems.[id]
               match v with 
               | Item.Value x -> 
                   let typ = x.Type
