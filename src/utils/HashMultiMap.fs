@@ -105,6 +105,16 @@ type internal HashMultiMap<'Key,'Value>(n: int, hasheq: IEqualityComparer<'Key>)
 
     member x.Replace(y,z) = 
         firstEntries.[y] <- z
+        
+    member x.TryGetValue (y, result : byref<_>) =
+        //firstEntries.TryGetValue(y, result)
+        match x.TryFind y with
+        | None ->
+            result <- Unchecked.defaultof<'Value>
+            false
+        | Some res ->
+            result <- res
+            true
 
     member x.TryFind(y) = 
         let mutable res = Unchecked.defaultof<'Value>

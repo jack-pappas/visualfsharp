@@ -284,8 +284,7 @@ module Keywords =
         keywordList |> List.map (fun (_, w, _) -> w) 
 
     let keywordTable = 
-        // TODO: this doesn't need to be a multi-map, a dictionary will do
-        let tab = System.Collections.Generic.Dictionary<string,token>(100)
+        let tab = System.Collections.Generic.Dictionary<string,token>(100, System.StringComparer.Ordinal)
         for (_mode,keyword,token) in keywordList do tab.Add(keyword,token)
         tab
         

@@ -464,16 +464,18 @@ module Dictionary =
 
 
 // FUTURE CLEANUP: remove this adhoc collection
-type Hashset<'T> = Dictionary<'T,int>
+type Hashset<'T> = HashSet<'T>
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Hashset = 
-    let create (n:int) = new Hashset<'T>(n, HashIdentity.Structural)
-    let add (t: Hashset<'T>) x = if not (t.ContainsKey x) then t.[x] <- 0
-    let fold f (t:Hashset<'T>) acc = Seq.fold (fun z (KeyValue(x,_)) -> f x z) acc t 
+    let create (_:int) = new Hashset<'T>(HashIdentity.Structural)
+    let inline add (t: Hashset<'T>) x = t.Add x |> ignore
+    let fold f (t:Hashset<'T>) acc = Seq.fold (fun z x -> f x z) acc t 
     let ofList l = 
-        let t = new Hashset<'T>(List.length l, HashIdentity.Structural)
-        l |> List.iter (fun x -> t.[x] <- 0)
+        let t = create 11
+        l |> List.iter (fun x -> t.Add x |> ignore)
         t
+    let inline contains v (t:Hashset<'T>) =
+        t.Contains v
         
 module Lazy = 
     let force (x: Lazy<'T>) = x.Force()
@@ -672,20 +674,17 @@ let _ = eventually { use x = null in return 1 }
 //---------------------------------------------------------------------------
 // generate unique stamps
 //---------------------------------------------------------------------------
-
+[<Sealed>]
 type UniqueStampGenerator<'T when 'T : equality>() = 
-    let encodeTab = new Dictionary<'T,int>(HashIdentity.Structural)
-    let mutable nItems = 0
-    let encode str = 
-        if encodeTab.ContainsKey(str)
-        then
-            encodeTab.[str]
-        else
-            let idx = nItems
-            encodeTab.[str] <- idx
-            nItems <- nItems + 1
-            idx
-    member this.Encode(str)  = encode str
+    let encodeTab = Dictionary<'T,int>(HashIdentity.Structural)
+    member __.Encode (str) =
+        lock encodeTab <| fun () ->
+            let mutable stamp = Unchecked.defaultof<_>
+            if encodeTab.TryGetValue (str, &stamp) then stamp
+            else
+                stamp <- encodeTab.Count
+                encodeTab.Add (str, stamp)
+                stamp
 
 //---------------------------------------------------------------------------
 // memoize tables (all entries cached, never collected)

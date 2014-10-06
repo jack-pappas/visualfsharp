@@ -117,8 +117,8 @@ let IsSecurityAttribute g amap (casmap : Dictionary<Stamp,bool>) (Attrib(tcref,_
         match attr.TyconRef.TryDeref with
         | Some _ -> 
            let tcs = tcref.Stamp
-           if casmap.ContainsKey(tcs) then
-             casmap.[tcs]
+           let mutable exists = Unchecked.defaultof<_>
+           if casmap.TryGetValue (tcs, &exists) then exists
            else
              let exists = ExistsInEntireHierarchyOfType (fun t -> typeEquiv g t (mkAppTy attr.TyconRef [])) g amap m AllowMultiIntfInstantiations.No (mkAppTy tcref [])
              casmap.[tcs] <- exists
@@ -4957,9 +4957,10 @@ and TcPat warnOnUpper cenv env topValInfo vFlags (tpenv,names,takenNames) ty pat
         let ftys = fields |> List.map (fun fsp -> actualTyOfRecdField inst fsp,fsp) 
         let fldsmap',acc = 
           ((tpenv,names,takenNames), ftys) ||> List.mapFold (fun s (ty,fsp) -> 
-              if Map.containsKey fsp.rfield_id.idText  fldsmap then 
-                TcPat warnOnUpper cenv env None vFlags s ty (Map.find fsp.rfield_id.idText fldsmap)
-              else 
+              match Map.tryFind fsp.rfield_id.idText fldsmap with
+              | Some res ->
+                TcPat warnOnUpper cenv env None vFlags s ty res
+              | None ->
                 (fun _ -> TPat_wild m),s)
         (fun values -> TPat_recd (tcref,tinst,List.map (fun f -> f values) fldsmap',m)), 
         acc
@@ -9340,7 +9341,7 @@ and bindLetRec (binds:Bindings) m e =
 
 /// Check for duplicate bindings in simple recursive patterns
 and CheckRecursiveBindingIds binds =
-    let hashOfBinds = new Dictionary<string,_>()
+    let hashOfBinds = new Dictionary<string,_>(System.StringComparer.Ordinal)
             
     for (SynBinding.Binding(_,_,_,_,_,_,_,b,_,_,m,_)) in binds do
         let nm =
@@ -10498,8 +10499,8 @@ and TcIncrementalLetRecGeneralization cenv scopem
         // pathological situations
         let freeInUncheckedRecBinds = 
             lazy ((emptyFreeTyvars, cenv.recUses.Contents) ||> Map.fold (fun acc vStamp _ -> 
-                       if uncheckedRecBindsTable.ContainsKey vStamp then 
-                           let fwdBind = uncheckedRecBindsTable.[vStamp]  
+                       let mutable fwdBind = Unchecked.defaultof<_>
+                       if uncheckedRecBindsTable.TryGetValue (vStamp, &fwdBind) then
                            accFreeInType CollectAllNoCaching  fwdBind.RecBindingInfo.Val.Type acc
                        else
                            acc))

@@ -37,6 +37,12 @@ type TyparMap<'T> =
     member tm.Item with get (v: Typar) = let (TPMap m) = tm in m.[v.Stamp]
     member tm.ContainsKey (v: Typar) = let (TPMap m) = tm in m.ContainsKey(v.Stamp)
     member tm.Add (v: Typar, x) = let (TPMap m) = tm in TPMap (m.Add(v.Stamp,x))
+    member tm.TryGetValue (v : Typar, result : byref<_>) : bool =
+        let (TPMap m) = tm
+        if m.ContainsKey v.Stamp then
+            result <- m.[v.Stamp]; true
+        else
+            result <- Unchecked.defaultof<_>; false
     static member Empty : TyparMap<'T> = TPMap Map.empty
 
 [<NoEquality; NoComparison; Sealed>]
@@ -47,6 +53,11 @@ type TyconRefMap<'T>(imap: StampMap<'T>) =
     member m.Add (v: TyconRef) x = TyconRefMap (imap.Add (v.Stamp,x))
     member m.Remove (v: TyconRef) = TyconRefMap (imap.Remove v.Stamp)
     member m.IsEmpty = imap.IsEmpty
+    member m.TryGetValue (v : TyconRef, result : byref<_>) : bool =
+        if imap.ContainsKey v.Stamp then
+            result <- imap.[v.Stamp]; true
+        else
+            result <- Unchecked.defaultof<_>; false
 
     static member Empty : TyconRefMap<'T> = TyconRefMap Map.empty
     static member OfList vs = (vs, TyconRefMap<'T>.Empty) ||> List.foldBack (fun (x,y) acc -> acc.Add x y) 
@@ -54,7 +65,6 @@ type TyconRefMap<'T>(imap: StampMap<'T>) =
 [<Struct>]
 [<NoEquality; NoComparison>]
 type ValMap<'T>(imap: StampMap<'T>) = 
-     
     member m.Contents = imap
     member m.Item with get (v:Val) = imap.[v.Stamp]
     member m.TryFind (v: Val) = imap.TryFind v.Stamp 
@@ -64,7 +74,11 @@ type ValMap<'T>(imap: StampMap<'T>) =
     static member Empty = ValMap<'T> Map.empty
     member m.IsEmpty = imap.IsEmpty
     static member OfList vs = (vs, ValMap<'T>.Empty) ||> List.foldBack (fun (x,y) acc -> acc.Add x y) 
-
+    member m.TryGetValue (v : Val, result : byref<_>) : bool =
+        if imap.ContainsKey v.Stamp then
+            result <- imap.[v.Stamp]; true
+        else
+            result <- Unchecked.defaultof<_>; false
 
 //--------------------------------------------------------------------------
 // renamings
@@ -194,11 +208,11 @@ and remapMeasureAux tyenv unt =
     | MeasureVar tp as unt -> 
       match tp.Solution with
        | None -> 
-          if ListAssoc.containsKey typarEq tp tyenv.tpinst then 
-              match ListAssoc.find typarEq tp tyenv.tpinst with 
-              | TType_measure unt -> unt
-              | _ -> failwith "remapMeasureAux: incorrect kinds"
-          else unt
+          match ListAssoc.tryFind typarEq tp tyenv.tpinst with
+          | Some (TType_measure unt) -> unt
+          | Some _ ->
+              failwith "remapMeasureAux: incorrect kinds"
+          | None -> unt
        | Some (TType_measure unt) -> remapMeasureAux tyenv unt
        | Some ty -> failwithf "incorrect kinds: %A" ty
 and remapTypesAux tyenv types = List.mapq (remapTypeAux tyenv) types
@@ -824,8 +838,9 @@ and typarsAEquivAux erasureFlag g (aenv: TypeEquivEnv) tps1 tps2 =
     List.forall2 (typarConstraintSetsAEquivAux erasureFlag g aenv) tps1 tps2
 
 and tcrefAEquiv g aenv tc1 tc2 = 
-    tyconRefEq g tc1 tc2 || 
-    (aenv.EquivTycons.ContainsKey tc1  && tyconRefEq g aenv.EquivTycons.[tc1] tc2)
+    tyconRefEq g tc1 tc2 || (
+        let mutable res = Unchecked.defaultof<_> in
+        aenv.EquivTycons.TryGetValue (tc1, &res) && tyconRefEq g res tc2)
 
 and typeAEquivAux erasureFlag g aenv ty1 ty2 = 
     let ty1 = stripTyEqnsWrtErasure erasureFlag g ty1 
@@ -856,8 +871,12 @@ and typeAEquivAux erasureFlag g aenv ty1 ty2 =
 
 and measureAEquiv g aenv un1 un2 =
     let vars1 = ListMeasureVarOccs un1
-    let trans tp1 = if aenv.EquivTypars.ContainsKey tp1 then destAnyParTy g aenv.EquivTypars.[tp1] else tp1
-    let remapTyconRef tc = if aenv.EquivTycons.ContainsKey tc then aenv.EquivTycons.[tc] else tc
+    let trans tp1 =
+        let mutable res = Unchecked.defaultof<_>
+        if aenv.EquivTypars.TryGetValue (tp1, &res) then destAnyParTy g res else tp1
+    let remapTyconRef tc =
+        let mutable res = Unchecked.defaultof<_>
+        if aenv.EquivTycons.TryGetValue (tc, &res) then res else tc
     let vars1' = List.map trans vars1
     let vars2 = ListSet.subtract typarEq (ListMeasureVarOccs un2) vars1'
     let cons1 = ListMeasureConOccsAfterRemapping g remapTyconRef un1
@@ -1222,13 +1241,20 @@ let mkValAddr m v = Expr.Op (TOp.LValueOp (LGetAddr, v), [], [], m)
 type ValHash<'T> = 
     | ValHash of Dictionary<Stamp,'T>
     member ht.Values = let (ValHash t) = ht in seq { for KeyValue(_,v) in t do yield v }
-    member ht.TryFind (v:Val) = let (ValHash t) = ht in let i = v.Stamp in if t.ContainsKey(i) then Some(t.[i]) else None
+    member ht.TryFind (v:Val) =
+        let (ValHash t) = ht
+        let i = v.Stamp
+        let mutable res = Unchecked.defaultof<_>
+        if t.TryGetValue (i, &res) then Some res else None
     member ht.Add (v:Val, x) = let (ValHash t) = ht in t.[v.Stamp] <- x
     static member Create() =  ValHash (new Dictionary<_,'T>(11))
 
 [<Struct; NoEquality; NoComparison>]
 type ValMultiMap<'T>(contents: StampMap<'T list>) =
-    member m.Find (v: Val) = let stamp = v.Stamp in if contents.ContainsKey stamp then contents.[stamp] else []
+    member m.Find (v: Val) =
+        let stamp = v.Stamp
+        let mutable res = Unchecked.defaultof<_>
+        if contents.TryGetValue (stamp, &res) then res else []
     member m.Add (v:Val, x) = ValMultiMap<'T>(contents.Add (v.Stamp, x :: m.Find v))
     member m.Remove (v: Val) = ValMultiMap<'T>(contents.Remove v.Stamp)
     member m.Contents  = contents
@@ -1236,7 +1262,9 @@ type ValMultiMap<'T>(contents: StampMap<'T list>) =
 
 [<Struct; NoEquality; NoComparison>]
 type TyconRefMultiMap<'T>(contents: TyconRefMap<'T list>) =
-    member m.Find v = if contents.ContainsKey v then contents.[v] else []
+    member m.Find v =
+        let mutable res = Unchecked.defaultof<_>
+        if contents.TryGetValue (v, &res) then res else []
     member m.Add (v, x) = TyconRefMultiMap<'T>(contents.Add v (x :: m.Find v))
     static member Empty = TyconRefMultiMap<'T>(TyconRefMap<_>.Empty)
 
@@ -3849,21 +3877,18 @@ type CheckCachability<'key,'acc>(name,f: FreeVarOptions -> 'key -> 'acc -> bool 
             acc 
         else
             let cls,res = f opts  key acc
-            if opts.canCache then 
-                if dict.ContainsKey key then 
-                    dict.[key] <- dict.[key] + 1
-                else
-                    dict.[key] <- 1
+            if opts.canCache then
+                dict.[key] <-
+                    let mutable count = Unchecked.defaultof<_>
+                    if dict.TryGetValue (key, &count) then (count + 1) else 1
                 if res === acc then
-                    if idem.ContainsKey key then 
-                        idem.[key] <- idem.[key] + 1
-                    else
-                        idem.[key] <- 1
+                    idem.[key] <-
+                        let mutable count = Unchecked.defaultof<_>
+                        if idem.TryGetValue (key, &count) then (count + 1) else 1
                 if cls then
-                    if closed.ContainsKey key then 
-                        closed.[key] <- closed.[key] + 1
-                    else
-                        closed.[key] <- 1
+                    closed.[key] <-
+                        let mutable count = Unchecked.defaultof<_>
+                        if closed.TryGetValue (key, &count) then (count + 1) else 1
             res
             
 

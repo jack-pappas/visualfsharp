@@ -1231,7 +1231,7 @@ let CompilePatternBasic
         let used = accTargetsOfDecisionTree dtree [] |> Hashset.ofList
 
         clausesL |> List.iteri (fun i c ->  
-            if not (used.ContainsKey i) then warning (RuleNeverMatched c.Range)) 
+            if not (Hashset.contains i used) then warning (RuleNeverMatched c.Range)) 
 
     dtree,targets
   

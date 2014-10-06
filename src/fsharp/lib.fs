@@ -195,6 +195,14 @@ module ListAssoc =
       match l with 
       | [] -> notFound()
       | (x',y)::t -> if f x x' then y else find f x t
+      
+    /// Treat a list of key-value pairs as a lookup collection.
+    /// This function looks up a value based on a match from the supplied
+    /// predicate function.
+    let rec tryFind f x l = 
+      match l with 
+      | [] -> None
+      | (x',y)::t -> if f x x' then Some y else tryFind f x t
 
     /// Treat a list of key-value pairs as a lookup collection.
     /// This function returns true if two keys are the same according to the predicate

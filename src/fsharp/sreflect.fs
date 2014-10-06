@@ -214,7 +214,8 @@ module SimplePickle =
             n
 
         member tbl.FindOrAdd x =
-            if tbl.tbl.ContainsKey x then tbl.tbl.[x] 
+            let mutable res = Unchecked.defaultof<_>
+            if tbl.tbl.TryGetValue (x, &res) then res 
             else tbl.Add x
 
         member tbl.Find x = tbl.tbl.[x] 

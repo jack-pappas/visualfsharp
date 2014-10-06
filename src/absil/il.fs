@@ -75,10 +75,10 @@ let rec splitNamespaceAux (nm:string) =
 
 /// Global State. All namespace splits ever seen
 // ++GLOBAL MUTABLE STATE
-let memoizeNamespaceTable = new Dictionary<string,string list>(10)
+let memoizeNamespaceTable = new Dictionary<string,string list>(10, System.StringComparer.Ordinal)
 
 //  ++GLOBAL MUTABLE STATE
-let memoizeNamespaceRightTable = new Dictionary<string,string option * string>(100)
+let memoizeNamespaceRightTable = new Dictionary<string,string option * string>(100, System.StringComparer.Ordinal)
 
 
 let splitNamespace nm =
@@ -92,7 +92,7 @@ let splitNamespaceMemoized nm = splitNamespace nm
 
 // ++GLOBAL MUTABLE STATE
 let memoizeNamespaceArrayTable = 
-    Dictionary<string,string[]>(10)
+    Dictionary<string,string[]>(10, System.StringComparer.Ordinal)
 
 let splitNamespaceToArray nm =
     let mutable res = Unchecked.defaultof<_>
@@ -171,7 +171,13 @@ type LazyOrderedMultiMap<'Key,'Data when 'Key : equality>(keyf : 'Data -> 'Key, 
     let quickMap= 
         lazyItems |> lazyMap (fun entries -> 
             let t = new Dictionary<_,_>(entries.Length, HashIdentity.Structural)
-            do entries |> List.iter (fun y -> let key = keyf y in t.[key] <- y :: (if t.ContainsKey(key) then t.[key] else [])) 
+            do entries |> List.iter (fun y ->
+                let key = keyf y
+                t.[key] <-
+                    let mutable existing = Unchecked.defaultof<_>
+                    if t.TryGetValue (key, &existing) then
+                        y :: existing
+                    else [y])
             t)
 
     member self.Entries() = lazyItems.Force()
@@ -180,7 +186,10 @@ type LazyOrderedMultiMap<'Key,'Data when 'Key : equality>(keyf : 'Data -> 'Key, 
     
     member self.Filter(f) = new LazyOrderedMultiMap<'Key,'Data>(keyf, lazyItems |> lazyMap (List.filter f))
 
-    member self.Item with get(x) = let t = quickMap.Force() in if t.ContainsKey x then t.[x] else []
+    member self.Item x =
+        let t = quickMap.Force()
+        let mutable value = Unchecked.defaultof<_>
+        if t.TryGetValue (x, &value) then value else []
 
 
 //---------------------------------------------------------------------
@@ -3569,12 +3578,13 @@ type BasicBlockStartsToCodeLabelsMap(instrs,tryspecs,localspecs,lab2pc) =
     // for the basic blocks we end up creating. 
     let lab2clMap = Dictionary<_,_>(10, HashIdentity.Structural) 
     let pc2clMap = Dictionary<_,_>(10, HashIdentity.Structural) 
-    let addBBstartPc pc pcs cls = 
-        if pc2clMap.ContainsKey pc then 
-            pc2clMap.[pc], pcs, cls
+    let addBBstartPc pc pcs cls =
+        let mutable existingCl = Unchecked.defaultof<_>
+        if pc2clMap.TryGetValue (pc, &existingCl) then
+            existingCl, pcs, cls
         else 
             let cl = generateCodeLabel ()
-            pc2clMap.[pc] <- cl;
+            pc2clMap.Add (pc, cl)
             cl, pc::pcs, CodeLabels.insert cl cls 
 
     let bbstartPcs, bbstart_code_labs  = 
@@ -3595,15 +3605,16 @@ type BasicBlockStartsToCodeLabelsMap(instrs,tryspecs,localspecs,lab2pc) =
     member c.BasicBlockStartPositions = bbstartPcs
     member c.BasicBlockStartCodeLabels = bbstart_code_labs
 
-    member c.lab2cl bbLab = 
-        try 
-            lab2clMap.[bbLab]
-        with :? KeyNotFoundException -> failwith ("basic block label "+formatCodeLabel bbLab+" not declared")  
+    member c.lab2cl bbLab =
+        let mutable cl = Unchecked.defaultof<_>
+        if lab2clMap.TryGetValue (bbLab, &cl) then cl
+        else
+            failwith ("basic block label "+formatCodeLabel bbLab+" not declared")
 
-    member c.pc2cl pc = 
-        try 
-            pc2clMap.[pc] 
-        with :? KeyNotFoundException -> 
+    member c.pc2cl pc =
+        let mutable cl = Unchecked.defaultof<_>
+        if pc2clMap.TryGetValue (pc, &cl) then cl
+        else
             failwith ("internal error while mapping pc "+string pc+" to code label")  
 
     member c.remapLabels i =

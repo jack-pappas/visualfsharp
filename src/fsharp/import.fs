@@ -116,8 +116,8 @@ let ImportILTypeRefUncached (env:ImportMap) m (tref:ILTypeRef) =
     
 /// Import a reference to a type definition, given an AbstractIL ILTypeRef, with caching
 let ImportILTypeRef (env:ImportMap) m (tref:ILTypeRef) =
-    if env.ILTypeRefToTyconRefCache.ContainsKey(tref) then
-        env.ILTypeRefToTyconRefCache.[tref]
+    let mutable tcref = Unchecked.defaultof<_>
+    if env.ILTypeRefToTyconRefCache.TryGetValue(tref, &tcref) then tcref
     else 
         let tcref = ImportILTypeRefUncached  env m tref
         env.ILTypeRefToTyconRefCache.[tref] <- tcref
@@ -389,7 +389,9 @@ let multisetDiscriminateAndMap nodef tipf (items: ('Key list * 'Value) list) =
             match keylist with 
             | [] -> ()
             | key::rest -> 
-                buckets.[key] <- (rest,v) :: (if buckets.ContainsKey key then buckets.[key] else []);
+                buckets.[key] <-
+                    let mutable existingList = Unchecked.defaultof<_>
+                    (rest,v) :: (if buckets.TryGetValue (key, &existingList) then existingList else []);
 
         [ for (KeyValue(key,items)) in buckets -> nodef key items ]
 
