@@ -647,16 +647,17 @@ module Eventually =
     let tryWith e handler =    
         catch e 
         |> bind (function Result v -> Done v | Exception e -> handler e)
-    
+
+[<Sealed>]
 type EventuallyBuilder() = 
-    member x.Bind(e,k) = Eventually.bind k e
-    member x.Return(v) = Eventually.Done v
-    member x.ReturnFrom(v) = v
-    member x.Combine(e1,e2) = e1 |> Eventually.bind (fun () -> e2)
-    member x.TryWith(e,handler) = Eventually.tryWith e handler
-    member x.TryFinally(e,compensation) =  Eventually.tryFinally e compensation
-    member x.Delay(f) = Eventually.delay f
-    member x.Zero() = Eventually.Done ()
+    member inline __.Bind(e,k) = Eventually.bind k e
+    member inline __.Return(v) = Eventually.Done v
+    member inline __.ReturnFrom(v) = v
+    member inline __.Combine(e1,e2) = e1 |> Eventually.bind (fun () -> e2)
+    member inline __.TryWith(e,handler) = Eventually.tryWith e handler
+    member inline __.TryFinally(e,compensation) =  Eventually.tryFinally e compensation
+    member inline __.Delay(f) = Eventually.delay f
+    member inline __.Zero() = Eventually.Done ()
 
 
 let eventually = new EventuallyBuilder()
