@@ -20,7 +20,7 @@ module NativePtr =
     [<NoDynamicInvocation>]
     [<CompiledName("Zero")>]
     let inline zero<'T when 'T : unmanaged> : nativeptr<'T> =
-       (# "ldnull" : nativeptr<'T> #)
+       (# "" 0n : nativeptr<'T> #)
 
     [<Unverifiable>]
     [<NoDynamicInvocation>]
