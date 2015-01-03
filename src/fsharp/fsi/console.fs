@@ -3,8 +3,8 @@
 namespace Microsoft.FSharp.Compiler.Interactive
 
 open System
-open System.Text
 open System.Collections.Generic
+open System.Text
 open Internal.Utilities
 
 /// System.Console.ReadKey appears to return an ANSI character (not the expected the unicode character).
@@ -34,50 +34,6 @@ module internal ConsoleOptions =
     else
       c
 
-type internal Style = Prompt | Out | Error
-
-/// Class managing the command History.
-type internal History() =
-    let list  = new List<string>()
-    let mutable current  = 0 
-
-    member x.Count = list.Count
-    member x.Current = 
-        if current >= 0 && current < list.Count then list.[current] else String.Empty
-
-    member x.Clear() = list.Clear(); current <- -1
-    member x.Add line = 
-        match line with 
-        | null | "" -> ()
-        | _ -> list.Add(line)
-
-    member x.AddLast line = 
-        match line with 
-        | null | "" -> ()
-        | _ -> list.Add(line); current <- list.Count
-
-    // Dead code   
-    // member x.First() = current <- 0; x.Current
-    // member x.Last() = current <- list.Count - 1; x.Current;
-
-    member x.Previous() = 
-        if (list.Count > 0)  then
-            current <- ((current - 1) + list.Count) % list.Count
-        x.Current
-
-    member x.Next() = 
-        if (list.Count > 0) then
-            current <- (current + 1) % list.Count
-        x.Current
-
-/// List of available optionsCache
-
-type internal Options() = 
-    inherit History()
-    let mutable root = ""
-    member x.Root with get() = root and set(v) = (root <- v)
-
-/// Cursor position management
 
 module internal Utils = 
 
@@ -127,43 +83,119 @@ module internal Utils =
             | Some methInfo -> methInfo        
 
 
+type internal Style = Prompt | Out | Error
+
+/// Class managing the command History.
+type internal History() =
+    let list = new List<string>()
+    let mutable current  = 0 
+
+    member __.Count = list.Count
+    member __.Current = 
+        if current >= 0 && current < list.Count then list.[current] else String.Empty
+
+    member __.Clear () =
+        list.Clear ()
+        current <- -1
+
+    member x.Add line =
+        match line with
+        | null | "" -> ()
+        | _ -> list.Add(line)
+
+    member x.AddLast line = 
+        match line with
+        | null | "" -> ()
+        | _ ->
+            list.Add(line)
+            current <- list.Count
+
+    member x.Previous() = 
+        if (list.Count > 0) then
+            current <- ((current - 1) + list.Count) % list.Count
+        x.Current
+
+    member x.Next() = 
+        if (list.Count > 0) then
+            current <- (current + 1) % list.Count
+        x.Current
+
+/// List of available options.
+[<Sealed>]
+type internal Options() =
+    inherit History()
+    member val Root = "" with get, set
+
+/// Console cursor position management.
 [<Sealed>]
 type internal Cursor =
-    static member ResetTo(top,left) = 
-        Utils.guard(fun () -> 
-           Console.CursorTop <- min top (Console.BufferHeight - 1);
-           Console.CursorLeft <- left)
+    static member ResetTo(top,left) =
+        Utils.guard <| fun () -> 
+           Console.CursorTop <- min top (Console.BufferHeight - 1)
+           Console.CursorLeft <- left
+
     static member Move(inset, delta) =
         let position = Console.CursorTop * (Console.BufferWidth - inset) + (Console.CursorLeft - inset) + delta
         let top  = position / (Console.BufferWidth - inset)
         let left = inset + position % (Console.BufferWidth - inset)
         Cursor.ResetTo(top,left)
     
-type internal Anchor = 
-    {top:int; left:int}
-    static member Current(inset) = {top=Console.CursorTop;left= max inset Console.CursorLeft}
+type internal Anchor =
+    { top : int; left : int; }
+
+    static member Current (inset) =
+        { top = Console.CursorTop;
+          left = max inset Console.CursorLeft; }
 
     member p.PlaceAt(inset, index) =
         //printf "p.top = %d, p.left = %d, inset = %d, index = %d\n" p.top p.left inset index;
         let left = inset + (( (p.left - inset) + index) % (Console.BufferWidth - inset))
         let top = p.top + ( (p.left - inset) + index) / (Console.BufferWidth - inset)
         Cursor.ResetTo(top,left)
+
+/// <summary>
+/// Encapsulates state information for the <see cref="ReadLineConsole.ReadLine()"/> method
+/// and helper methods it depends on.
+/// </summary>
+type internal ReadLineState = {
+    /// Cursor anchor - position of anchor when the routine was called.
+    Anchor : Anchor ref;
+    /// Length of the output currently rendered on screen.
+    Rendered : int ref;
+    /// Input has changed, therefore options cache is invalidated.
+    Changed : bool ref;
+    /// Cache of options.
+    OptionsCache : Options ref;
+    /// The console input buffer.
+    Input : StringBuilder;
+    /// Current position - index into the input buffer.
+    Current : int ref;
+} with
+    /// Creates a new ReadLineState record.
+    static member Create inset =
+      { Anchor = ref (Anchor.Current inset);
+        Rendered = ref 0;
+        Changed = ref false;
+        OptionsCache = ref (new Options());
+        Input = new StringBuilder ();
+        Current = ref 0; }
     
+[<Sealed>]
 type internal ReadLineConsole() =
     let history = new History()
     let mutable complete : (string option * string -> seq<string>) = fun (_s1,_s2) -> Seq.empty
-    member x.SetCompletionFunction f = complete <- f
+    member __.SetCompletionFunction f = complete <- f
 
+    member __.Prompt = "> "
+    member __.Prompt2 = "- "
     /// Inset all inputs by this amount
-    member x.Prompt = "> "
-    member x.Prompt2 = "- "
-    member x.Inset = x.Prompt.Length
+    member private x.Inset = x.Prompt.Length
     
     member x.GetOptions(input:string) =
-        /// Tab optionsCache available in current context
-        let optionsCache = new Options() 
+        /// Tab options available in current context
+        let optionsCache = new Options()
 
-        let rec look parenCount i = 
+        let rec look parenCount i =
             if i <= 0 then i else
             match input.Chars(i - 1) with
             | c when Char.IsLetterOrDigit(c) (* or Char.IsWhiteSpace(c) *) -> look parenCount (i-1)
@@ -172,252 +204,267 @@ type internal ReadLineConsole() =
             | '(' | '{' | '[' -> look (parenCount-1) (i-1)
             | _ when parenCount > 0 -> look parenCount (i-1)
             | _ -> i
-        let start = look 0 input.Length 
+        let start = look 0 input.Length
 
-        let name = input.Substring(start, input.Length - start);
-        if (name.Trim().Length > 0) then
-            let lastDot = name.LastIndexOf('.');
-            let attr, pref, root = 
-                if (lastDot < 0) then
+        let name = input.Substring(start, input.Length - start)
+        // REVIEW : Can we use String.IsNullOrWhiteSpace here instead of calling Trim() on 'name'?
+        if name.Trim().Length = 0 then
+            optionsCache, false
+        else
+            let lastDot = name.LastIndexOf '.'
+            let attr, pref, root =
+                if lastDot < 0 then
                     None, name, input.Substring(0, start)
-                else 
+                else
                     Some(name.Substring(0, lastDot)),
                     name.Substring(lastDot + 1),
                     input.Substring(0, start + lastDot + 1)
             //printf "attr, pref, root = %s\n" (any_to_string (attr, pref, root)) 
-            try 
-                complete(attr,pref) 
+            try
+                complete(attr,pref)
                 |> Seq.filter(fun option -> option.StartsWith(pref,StringComparison.Ordinal))
-                |> Seq.iter (fun option -> optionsCache.Add(option))
+                |> Seq.iter (fun option -> optionsCache.Add option)
                  // engine.Evaluate(String.Format("dir({0})", attr)) as IEnumerable;
-                optionsCache.Root <-root;
+                optionsCache.Root <- root
             with e ->
-                optionsCache.Clear();
-            optionsCache,true;
-        else 
-            optionsCache,false;
+                optionsCache.Clear ()
+            optionsCache, true
 
-    member x.MapCharacter(c) : string =
-        match c with 
-        | '\x1A'-> "^Z";
+    /// Maps control characters to a printable string for display.
+    static member private MapCharacter c : string =
+        assert (Char.IsControl c)
+        match c with
+        | '\x1A'-> "^Z"
         | _ -> "^?"
 
-    member x.GetCharacterSize(c) =
-        if (Char.IsControl(c)) 
-        then x.MapCharacter(c).Length
+    static member private GetCharacterSize c =
+        if Char.IsControl c then
+            ReadLineConsole.MapCharacter(c).Length
         else 1
 
-    static member TabSize = 4;
+    static member TabSize = 4
+
+    member private x.CheckLeftEdge prompt =
+        let currLeft = Console.CursorLeft
+        if currLeft < x.Inset then
+            if currLeft = 0 then
+                Console.Write (if prompt then x.Prompt2 else String(' ', x.Inset))
+            Utils.guard <| fun () ->
+                Console.CursorTop <- min Console.CursorTop (Console.BufferHeight - 1)
+                Console.CursorLeft <- x.Inset
+
+    member private x.WriteBlank () =
+        Console.Write ' '
+        x.CheckLeftEdge false
+
+    member private x.WriteChar c state =
+        if Console.CursorTop = Console.BufferHeight - 1 && Console.CursorLeft = Console.BufferWidth - 1 then
+            //printf "bottom right!\n";
+            state.Anchor := { !state.Anchor with top = (!state.Anchor).top - 1 }
+        x.CheckLeftEdge true
+        if Char.IsControl c then
+            let s = ReadLineConsole.MapCharacter c
+            Console.Write s
+            state.Rendered := !state.Rendered + s.Length
+        else
+            Console.Write c
+            incr state.Rendered
+        x.CheckLeftEdge true
+
+    member private x.Render state =
+        //printf "render\n";
+        let curr = !state.Current
+        (!state.Anchor).PlaceAt(x.Inset, 0)
+        
+        let input = state.Input
+        // Initialize the output StringBuilder's capacity to the input length,
+        // plus a small additional amount. 'input' usually contains few (or zero)
+        // control characters, and initializing the output capacity avoids resizes.
+        let output = StringBuilder (input.Length + 10)
+        let mutable position = -1
+        
+        for i = 0 to input.Length - 1 do
+            if i = curr then
+                position <- output.Length
+            let c = input.[i]
+            if Char.IsControl c then
+                ReadLineConsole.MapCharacter c
+                |> output.Append
+                |> ignore
+            else 
+                output.Append c |> ignore
+
+        if curr = input.Length then
+            position <- output.Length
+
+        // render the current text, computing a new value for "rendered"
+        let old_rendered = !state.Rendered
+        state.Rendered := 0
+        for i = 0 to input.Length - 1 do
+            x.WriteChar input.[i] state
+
+        // blank out any dangling old text
+        for i = !state.Rendered to old_rendered - 1 do
+            x.WriteBlank()
+
+        (!state.Anchor).PlaceAt(x.Inset, position)
+
+    member private x.InsertChar (c : char) state =
+        let current = state.Current
+        let input = state.Input
+
+        if !current = input.Length then
+            incr current
+            input.Append c |> ignore
+            x.WriteChar c state
+        else
+            input.Insert (!current, c) |> ignore
+            incr current
+            x.Render state
+
+    member private x.InsertTab state =
+        for i = ReadLineConsole.TabSize - (!state.Current % ReadLineConsole.TabSize) downto 1 do
+            x.InsertChar ' ' state
+
+    member private x.MoveLeft state =
+        let current = state.Current
+        let input = state.Input
+        if !current > 0 && !current - 1 < input.Length then
+            decr current
+            let c = input.[!current]
+            Cursor.Move(x.Inset, - ReadLineConsole.GetCharacterSize c)
+
+    member private x.MoveRight state =
+        let current = state.Current
+        let input = state.Input
+        if !current < input.Length then
+            let c = input.[!current]
+            incr current
+            Cursor.Move(x.Inset, ReadLineConsole.GetCharacterSize c)
+
+    member private x.SetInput (line : string) state =
+        let current = state.Current
+        let input = state.Input
+        input.Length <- 0
+        input.Append line |> ignore
+        current := input.Length
+        x.Render state
+
+    member private x.TabPress shift state =
+        let input = state.Input
+        let opts, prefix =
+            if !state.Changed then
+                state.Changed := false
+                x.GetOptions(input.ToString())
+            else
+                !state.OptionsCache, false
+        state.OptionsCache := opts
+            
+        if opts.Count > 0 then
+            let part =
+                if shift
+                then opts.Previous() 
+                else opts.Next()
+            x.SetInput (opts.Root + part) state
+        else
+            if prefix then
+                Console.Beep ()
+            else
+                x.InsertTab state
+
+    member private x.Delete state =
+        let current = state.Current
+        let input = state.Input
+        if input.Length > 0 && !current < input.Length then
+            input.Remove(!current, 1) |> ignore
+            x.Render state
+
+    member private x.Insert (key : ConsoleKeyInfo) state =
+        // REVIEW: is this F6 rewrite required? 0x1A looks like Ctrl-Z.
+        // REVIEW: the Ctrl-Z code is not recognised as EOF by the lexer.
+        // REVIEW: looks like a relic of the port of readline, which is currently removable.
+        let c =
+            let c = if key.Key = ConsoleKey.F6 then '\x1A' else key.KeyChar
+            ConsoleOptions.readKeyFixup c
+        x.InsertChar c state
+
+    member private x.Backspace state =
+        let current = state.Current
+        let input = state.Input
+        if input.Length > 0 && !current > 0 then
+            input.Remove(!current - 1, 1) |> ignore
+            decr current
+            x.Render state
+
+    member private x.Enter state =
+        let input = state.Input
+        // REVIEW: Why not use Console.WriteLine() here instead of Console.Write()?
+        Console.Write '\n'
+        let line = input.ToString()
+        if line = "\x1A" then null
+        else 
+            if line.Length > 0 then 
+                history.AddLast line
+            line
+
+    member private x.Read state =
+        let key = Console.ReadKey true
+        match key.Key with
+        | ConsoleKey.Backspace ->
+            x.Backspace state
+            x.Change state
+        | ConsoleKey.Delete ->
+            x.Delete state
+            x.Change state
+        | ConsoleKey.Enter ->
+            x.Enter state
+        | ConsoleKey.Tab ->
+            x.TabPress (key.Modifiers &&& ConsoleModifiers.Shift <> enum 0) state
+            x.Read state
+        | ConsoleKey.UpArrow ->
+            x.SetInput (history.Previous()) state
+            x.Change state
+        | ConsoleKey.DownArrow ->
+            x.SetInput (history.Next()) state
+            x.Change state
+        | ConsoleKey.RightArrow ->
+            x.MoveRight state
+            x.Change state
+        | ConsoleKey.LeftArrow ->
+            x.MoveLeft state
+            x.Change state
+        | ConsoleKey.Escape ->
+            x.SetInput String.Empty state
+            x.Change state
+        | ConsoleKey.Home ->
+            state.Current := 0
+            (!state.Anchor).PlaceAt(x.Inset, 0)
+            x.Change state
+        | ConsoleKey.End ->
+            state.Current := state.Input.Length
+            (!state.Anchor).PlaceAt(x.Inset, !state.Rendered)
+            x.Change state
+        | _ ->
+            // Note: If KeyChar=0, the not a proper char, e.g. it could be part of a multi key-press character,
+            //       e.g. e-acute is ' and e with the French (Belgium) IME and US Intl KB.
+            // Here: skip KeyChar=0 (except for F6 which maps to 0x1A (ctrl-Z?)).
+            if key.KeyChar <> '\000' || key.Key = ConsoleKey.F6 then
+                x.Insert key state
+                x.Change state
+            else
+                // Skip and read again.
+                x.Read state
+
+    member private x.Change state =
+        state.Changed := true
+        x.Read state
 
     member x.ReadLine() =
-
-        let checkLeftEdge(prompt) = 
-            let currLeft = Console.CursorLeft 
-            if currLeft < x.Inset then 
-                if currLeft = 0 then Console.Write (if prompt then x.Prompt2 else String(' ',x.Inset))
-                Utils.guard(fun () -> 
-                    Console.CursorTop <- min Console.CursorTop (Console.BufferHeight - 1);
-                    Console.CursorLeft <- x.Inset);
-
         // The caller writes the primary prompt.  If we are reading the 2nd and subsequent lines of the
         // input we're responsible for writing the secondary prompt.
-        checkLeftEdge true
+        x.CheckLeftEdge true
 
-        /// Cursor anchor - position of !anchor when the routine was called
-        let anchor = ref (Anchor.Current(x.Inset));
-        /// Length of the output currently rendered on screen.
-        let rendered = ref 0
-        /// Input has changed, therefore options cache is invalidated.
-        let changed = ref false
-        /// Cache of optionsCache
-        let optionsCache = ref (new Options())
-        
-        let writeBlank() = 
-            Console.Write(' ');
-            checkLeftEdge false
-        let writeChar(c) = 
-            if Console.CursorTop = Console.BufferHeight - 1 && Console.CursorLeft = Console.BufferWidth - 1 then 
-                //printf "bottom right!\n";
-                anchor := { !anchor with top = (!anchor).top - 1 };
-            checkLeftEdge true
-            if (Char.IsControl(c)) then
-                let s = x.MapCharacter(c)
-                Console.Write(s);
-                rendered := !rendered + s.Length;
-            else 
-                Console.Write(c);
-                rendered := !rendered + 1;
-            checkLeftEdge true
+        /// State information for this method and helper methods.
+        let state = ReadLineState.Create x.Inset
 
-        /// The console input buffer.
-        let input = new StringBuilder() 
-        /// Current position - index into the input buffer
-        let current = ref 0;
-
-        let render() = 
-            //printf "render\n";
-            let curr = !current
-            (!anchor).PlaceAt(x.Inset,0);
-            let output = new StringBuilder()
-            let mutable position = -1
-            for i = 0 to input.Length - 1 do 
-                if (i = curr) then
-                    position <- output.Length
-                let c = input.Chars(i)
-                if (Char.IsControl(c)) then
-                    output.Append(x.MapCharacter(c)) |> ignore;
-                else 
-                    output.Append(c) |> ignore;
-
-            if (curr = input.Length) then
-                position <- output.Length;
-
-            // render the current text, computing a new value for "rendered"
-            let old_rendered = !rendered 
-            rendered := 0;
-            for i = 0 to input.Length - 1 do 
-               writeChar(input.Chars(i));
-
-            // blank out any dangling old text
-            for i = !rendered to old_rendered - 1 do 
-                writeBlank();
-
-            (!anchor).PlaceAt(x.Inset,position);
-
-        render();
-        
-        let insertChar(c:char) =
-            if (!current = input.Length)  then 
-                current := !current + 1;
-                input.Append(c) |> ignore;
-                writeChar(c)
-            else
-                input.Insert(!current, c) |> ignore;
-                current := !current + 1;
-                render();
-        
-        let insertTab() = 
-            for i = ReadLineConsole.TabSize - (!current % ReadLineConsole.TabSize) downto 1 do
-                insertChar(' ')
-                
-        let moveLeft() = 
-            if (!current > 0 && (!current - 1 < input.Length)) then
-                current := !current - 1
-                let c = input.Chars(!current)
-                Cursor.Move(x.Inset, - x.GetCharacterSize(c))
-        
-        let moveRight() = 
-            if (!current < input.Length) then
-                let c = input.Chars(!current);
-                current := !current + 1;
-                Cursor.Move(x.Inset, x.GetCharacterSize(c));
-
-        let setInput(line:string) =
-            input.Length <- 0;
-            input.Append(line) |> ignore;
-            current := input.Length;
-            render()
-
-        let tabPress(shift) = 
-            let  opts,prefix = 
-                if !changed then
-                    changed := false;
-                    x.GetOptions(input.ToString());
-                else
-                   !optionsCache,false
-            optionsCache := opts;
-            
-            if (opts.Count > 0) then
-                let part = 
-                    if shift
-                    then opts.Previous() 
-                    else opts.Next();
-                setInput(opts.Root + part);
-            else 
-                if (prefix) then
-                    Console.Beep();
-                else 
-                    insertTab();
-
-        let delete() = 
-            if (input.Length > 0 && !current < input.Length) then
-                input.Remove(!current, 1) |> ignore;
-                render();
-        
-        let insert(key: ConsoleKeyInfo) =
-            // REVIEW: is this F6 rewrite required? 0x1A looks like Ctrl-Z.
-            // REVIEW: the Ctrl-Z code is not recognised as EOF by the lexer.
-            // REVIEW: looks like a relic of the port of readline, which is currently removable.
-            let c = if (key.Key = ConsoleKey.F6) then '\x1A' else key.KeyChar
-            let c = ConsoleOptions.readKeyFixup c
-            insertChar(c);
-            
-        let backspace() =                 
-            if (input.Length > 0 && !current > 0) then
-                input.Remove(!current - 1, 1) |> ignore;
-                current := !current - 1;
-                render();
-         
-        let enter() = 
-            Console.Write("\n");
-            let line = input.ToString();
-            if (line = "\x1A") then null
-            else 
-                if (line.Length > 0) then 
-                    history.AddLast(line);
-                line;
-        
-        let rec read() = 
-            let key = Console.ReadKey true
-
-            match (key.Key) with
-            | ConsoleKey.Backspace ->  
-                backspace();
-                change() 
-            | ConsoleKey.Delete -> 
-                delete();
-                change() 
-            | ConsoleKey.Enter -> 
-                enter()
-            | ConsoleKey.Tab -> 
-                tabPress(key.Modifiers &&& ConsoleModifiers.Shift <> enum 0);
-                read()
-            | ConsoleKey.UpArrow ->
-                setInput(history.Previous());
-                change()
-            | ConsoleKey.DownArrow ->
-                setInput(history.Next());
-                change()
-            | ConsoleKey.RightArrow ->
-                moveRight()
-                change()
-            | ConsoleKey.LeftArrow ->
-                moveLeft()
-                change()
-            | ConsoleKey.Escape ->
-                setInput(String.Empty);
-                change()
-            | ConsoleKey.Home ->
-                current := 0;
-                (!anchor).PlaceAt(x.Inset,0)
-                change()
-            | ConsoleKey.End ->
-                current := input.Length;
-                (!anchor).PlaceAt(x.Inset,!rendered);
-                change()
-            | _ ->
-                // Note: If KeyChar=0, the not a proper char, e.g. it could be part of a multi key-press character,
-                //       e.g. e-acute is ' and e with the French (Belgium) IME and US Intl KB.
-                // Here: skip KeyChar=0 (except for F6 which maps to 0x1A (ctrl-Z?)).
-                if key.KeyChar <> '\000' || key.Key = ConsoleKey.F6 then
-                  insert(key);
-                  change()
-                else
-                  // Skip and read again.
-                  read()
-
-        and change() = 
-           changed := true;
-           read() 
-        read()
-    
+        x.Read state

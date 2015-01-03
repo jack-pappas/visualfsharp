@@ -35,12 +35,13 @@ type internal FSharpInteractiveServer() =
 
     [<CodeAnalysis.SuppressMessage("Microsoft.Design", "CA1011:ConsiderPassingBaseTypesAsParameters")>]
     static member StartServer(channelName:string,server:FSharpInteractiveServer) =
-        let chan = new Ipc.IpcChannel(channelName) 
-        LifetimeServices.LeaseTime            <- TimeSpan(7,0,0,0); // days,hours,mins,secs 
-        LifetimeServices.LeaseManagerPollTime <- TimeSpan(7,0,0,0);
-        LifetimeServices.RenewOnCallTime      <- TimeSpan(7,0,0,0);
-        LifetimeServices.SponsorshipTimeout   <- TimeSpan(7,0,0,0);
-        ChannelServices.RegisterChannel(chan,false);
+        let chan = new Ipc.IpcChannel(channelName)
+        let oneWeek = TimeSpan.FromDays 7.0
+        LifetimeServices.LeaseTime            <- oneWeek
+        LifetimeServices.LeaseManagerPollTime <- oneWeek
+        LifetimeServices.RenewOnCallTime      <- oneWeek
+        LifetimeServices.SponsorshipTimeout   <- oneWeek
+        ChannelServices.RegisterChannel(chan,false)
         let objRef = RemotingServices.Marshal(server,"FSIServer") 
         ()
 

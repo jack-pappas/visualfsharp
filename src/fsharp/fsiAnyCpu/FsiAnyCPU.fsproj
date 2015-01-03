@@ -41,6 +41,24 @@
     <Compile Include="..\fsi\console.fs">
       <Link>console.fs</Link>
     </Compile>
+    <Compile Include="..\fsi\utilities.fs">
+      <Link>utilities.fs</Link>
+    </Compile>
+    <Compile Include="..\fsi\frontend.fs">
+      <Link>frontend.fs</Link>
+    </Compile>
+    <Compile Include="..\fsi\processing.fs">
+      <Link>processing.fs</Link>
+    </Compile>
+    <Compile Include="..\fsi\magicresolver.fs">
+      <Link>magicresolver.fs</Link>
+    </Compile>
+    <Compile Include="..\fsi\ui.fs">
+      <Link>ui.fs</Link>
+    </Compile>
+    <Compile Include="..\fsi\server.fs">
+      <Link>server.fs</Link>
+    </Compile>
     <Compile Include="..\fsi\fsi.fs">
       <Link>fsi.fs</Link>
     </Compile>
