@@ -1154,8 +1154,7 @@ type ProvidedTypeDefinition(container:TypeContainer,className : string, baseType
 
 
 
-#if TPEMIT_INTERNAL_AND_MINIMAL_FOR_TYPE_CONTAINERS
-#else
+#if !TPEMIT_INTERNAL_AND_MINIMAL_FOR_TYPE_CONTAINERS
 module Local = 
 
     let makeProvidedNamespace (namespaceName:string) (types:ProvidedTypeDefinition list) =

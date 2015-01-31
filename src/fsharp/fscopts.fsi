@@ -11,8 +11,7 @@ open Microsoft.FSharp.Compiler.Build
 open Microsoft.FSharp.Compiler.ErrorLogger
 open Microsoft.FSharp.Compiler.Ast
 open Microsoft.FSharp.Compiler.Tast
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 open Microsoft.FSharp.Compiler.Ilxgen
 #endif
 open Microsoft.FSharp.Compiler.Import
@@ -34,8 +33,7 @@ val PrintOptionInfo   : TcConfigBuilder -> unit
 
 val fsharpModuleName : CompilerTarget -> string -> string
 
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 val InitialOptimizationEnv : TcImports -> TcGlobals -> IncrementalOptimizationEnv
 val AddExternalCcuToOpimizationEnv : TcGlobals -> IncrementalOptimizationEnv -> ImportedAssembly -> IncrementalOptimizationEnv
 val ApplyAllOptimizations : TcConfig * TcGlobals * ConstraintSolver.TcValF * string * ImportMap * bool * IncrementalOptimizationEnv * CcuThunk * TypedAssembly -> TypedAssembly * Opt.LazyModuleInfo * IncrementalOptimizationEnv

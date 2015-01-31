@@ -577,8 +577,7 @@ val IsSignatureDataResource : ILResource -> bool
 val IsOptimizationDataResource : ILResource -> bool
 val IsReflectedDefinitionsResource : ILResource -> bool
 
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 val WriteSignatureData : TcConfig * TcGlobals * Tastops.Remap * CcuThunk * string -> ILResource
 val WriteOptimizationData :  TcGlobals * string * CcuThunk * Opt.LazyModuleInfo -> ILResource
 #endif

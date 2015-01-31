@@ -127,8 +127,7 @@ type ProvidedProperty =
     /// Add definition location information to the provided type definition.
     member AddDefinitionLocation : line:int * column:int * filePath:string -> unit
 
-#if TPEMIT_INTERNAL_AND_MINIMAL_FOR_TYPE_CONTAINERS
-#else
+#if !TPEMIT_INTERNAL_AND_MINIMAL_FOR_TYPE_CONTAINERS
 /// Represents an erased provided property.
 [<Class>]
 type ProvidedMeasureBuilder =
@@ -242,8 +241,7 @@ type ProviderTransformations =
     static member FilterTypes : types: Type list * ?methodFilter : (MethodInfo -> bool) * ?eventFilter : (EventInfo -> bool) * ?propertyFilter : (PropertyInfo -> bool) * ?constructorFilter : (ConstructorInfo -> bool) * ?fieldFilter : (FieldInfo -> bool) * ?baseTypeTransform : (Type -> Type option) -> Type list
 #endif
 
-#if TPEMIT_INTERNAL_AND_MINIMAL_FOR_TYPE_CONTAINERS
-#else
+#if !TPEMIT_INTERNAL_AND_MINIMAL_FOR_TYPE_CONTAINERS
 type TypeProviderForNamespaces =
 /// A base type providing default implementations of type provider functionality when all provided types are of type ProvidedTypeDefinition
 // A TypeProvider boiler plate type.

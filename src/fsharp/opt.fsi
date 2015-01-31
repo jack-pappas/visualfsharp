@@ -31,8 +31,7 @@ type OptimizationSettings =
 type ModuleInfo
 type LazyModuleInfo = Lazy<ModuleInfo>
 
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 [<Sealed>]
 type IncrementalOptimizationEnv =
     static member Empty : IncrementalOptimizationEnv

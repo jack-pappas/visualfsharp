@@ -16,8 +16,7 @@ open System.Collections.Generic
 open Internal.Utilities
 open Microsoft.FSharp.Compiler.AbstractIL 
 open Microsoft.FSharp.Compiler.AbstractIL.Internal 
-#if NO_PDB_READER
-#else
+#if !NO_PDB_READER
 open Microsoft.FSharp.Compiler.AbstractIL.Internal.Support 
 #endif
 open Microsoft.FSharp.Compiler.AbstractIL.Diagnostics 
@@ -3364,8 +3363,7 @@ and seekReadTopExportedTypes ctxt () =
            done;
            List.rev !res)
 
-#if NO_PDB_READER
-#else         
+#if !NO_PDB_READER
 let getPdbReader opts infile =  
     match opts.pdbPath with 
     | None -> None

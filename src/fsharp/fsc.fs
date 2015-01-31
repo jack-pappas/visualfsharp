@@ -27,8 +27,7 @@ open Microsoft.FSharp.Compiler.AbstractIL.Extensions.ILX
 open Microsoft.FSharp.Compiler.AbstractIL.Internal.Library 
 open Microsoft.FSharp.Compiler.AbstractIL.Diagnostics
 open Microsoft.FSharp.Compiler.AbstractIL.IL
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 open Microsoft.FSharp.Compiler.Ilxgen
 #endif
 open Microsoft.FSharp.Compiler.Ast
@@ -541,8 +540,7 @@ let runFromCommandLineToImportingAssemblies(displayPSTypeProviderSecurityDialogB
     ignore(tcGlobals,tcImports,frameworkTcImports,generatedCcu,typedAssembly,topAttrs,tcConfig,outfile,pdbfile,assemblyName,errorLogger)
 
 
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Code from here on down is just used by fsc.exe

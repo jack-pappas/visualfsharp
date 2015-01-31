@@ -13,7 +13,6 @@ namespace Microsoft.FSharp.Collections
     open Microsoft.FSharp.Core.SR
 #if FX_NO_ICLONEABLE
     open Microsoft.FSharp.Core.ICloneableExtensions            
-#else
 #endif    
 
     /// Basic operations on arrays
@@ -656,8 +655,7 @@ namespace Microsoft.FSharp.Collections
                 target.[i] <- x
             
 
-#if FX_NO_TPL_PARALLEL
-#else
+#if! FX_NO_TPL_PARALLEL
         module Parallel =
             open System.Threading.Tasks
             

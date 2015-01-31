@@ -3367,8 +3367,7 @@ let MakeILResource rname bytes =
       Access = ILResourceAccess.Public;
       CustomAttrs = emptyILCustomAttrs }
 
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 let PickleToResource file g scope rname p x = 
     { Name = rname;
       Location = (let bytes = pickleObjWithDanglingCcus file g scope p x in ILResourceLocation.Local (fun () -> bytes));
@@ -3379,8 +3378,7 @@ let PickleToResource file g scope rname p x =
 let GetSignatureData (file, ilScopeRef, ilModule, byteReader) : PickledDataWithReferences<PickledModuleInfo> = 
     unpickleObjWithDanglingCcus file ilScopeRef ilModule unpickleModuleInfo (byteReader())
 
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 let WriteSignatureData (tcConfig:TcConfig,tcGlobals,exportRemapping,ccu:CcuThunk,file) : ILResource = 
     let mspec = ccu.Contents
 #if DEBUG
@@ -3403,8 +3401,7 @@ let WriteSignatureData (tcConfig:TcConfig,tcGlobals,exportRemapping,ccu:CcuThunk
 let GetOptimizationData (file, ilScopeRef, ilModule, byteReader) = 
     unpickleObjWithDanglingCcus file ilScopeRef ilModule Opt.u_LazyModuleInfo (byteReader())
 
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 let WriteOptimizationData (tcGlobals, file, ccu,modulInfo) = 
     if verbose then  dprintf "Optimization data after remap:\n%s\n" (Layout.showL (Layout.squashTo 192 (Opt.moduleInfoL tcGlobals modulInfo)));
     PickleToResource file tcGlobals ccu (FSharpOptimizationDataResourceName+"."+ccu.AssemblyName) Opt.p_LazyModuleInfo modulInfo

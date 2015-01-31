@@ -218,12 +218,9 @@ namespace Microsoft.FSharp.Text.StructuredFormat
 #endif
         { FloatingPointFormat: string;
           AttributeProcessor: (string -> (string * string) list -> bool -> unit);
-#if RUNTIME
-#else
-#if COMPILER    // FSharp.Compiler.dll: This is the PrintIntercepts extensibility point currently revealed by fsi.exe's AddPrinter
+#if !RUNTIME && COMPILER  // FSharp.Compiler.dll: This is the PrintIntercepts extensibility point currently revealed by fsi.exe's AddPrinter
           PrintIntercepts: (IEnvironment -> obj -> Layout option) list;
           StringLimit : int;
-#endif
 #endif
           FormatProvider: System.IFormatProvider;
 #if FX_RESHAPED_REFLECTION
@@ -239,12 +236,9 @@ namespace Microsoft.FSharp.Text.StructuredFormat
           ShowIEnumerable: bool; }
         static member Default =
             { FormatProvider = (System.Globalization.CultureInfo.InvariantCulture :> System.IFormatProvider);
-#if RUNTIME
-#else
-#if COMPILER    // FSharp.Compiler.dll: This is the PrintIntercepts extensibility point currently revealed by fsi.exe's AddPrinter
+#if !RUNTIME && COMPILER  // FSharp.Compiler.dll: This is the PrintIntercepts extensibility point currently revealed by fsi.exe's AddPrinter
               PrintIntercepts = [];
               StringLimit = System.Int32.MaxValue;
-#endif
 #endif
               AttributeProcessor= (fun _ _ _ -> ());
 #if FX_RESHAPED_REFLECTION
@@ -896,9 +890,7 @@ namespace Microsoft.FSharp.Text.StructuredFormat
                                             with _ -> 
                                               None
 
-#if RUNTIME
-#else
-#if COMPILER    // FSharp.Compiler.dll: This is the PrintIntercepts extensibility point currently revealed by fsi.exe's AddPrinter
+#if !RUNTIME && COMPILER  // FSharp.Compiler.dll: This is the PrintIntercepts extensibility point currently revealed by fsi.exe's AddPrinter
                         let res = 
                             match res with 
                             | Some _ -> res
@@ -908,7 +900,6 @@ namespace Microsoft.FSharp.Text.StructuredFormat
                                                 member env.MaxColumns = opts.PrintLength
                                                 member env.MaxRows = opts.PrintLength }
                                 opts.PrintIntercepts |> List.tryPick (fun intercept -> intercept env x)
-#endif
 #endif
                         let res = 
                             match res with 

@@ -167,8 +167,7 @@ module internal IncrementalFSharpBuild =
       /// Attempts to find the slot of the given input file name. Throws an exception if it couldn't find it.    
       member GetSlotOfFileName : string -> int
  
-#if NO_QUICK_SEARCH_HELPERS // only used in QuickSearch prototype
-#else
+#if !NO_QUICK_SEARCH_HELPERS // only used in QuickSearch prototype
       /// Get the number of slots on the vector of parse results
       member GetSlotsCount : unit -> int
       /// Await the untyped parse results for a particular slot in the vector of parse results.

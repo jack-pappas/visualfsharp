@@ -19,8 +19,7 @@ namespace System.Numerics
     // NOTE: 0 has two repns (+1,0) or (-1,0).
     [<Struct>]
     [<CustomEquality; CustomComparison>]
-#if FX_ATLEAST_PORTABLE
-#else
+#if !FX_ATLEAST_PORTABLE
     [<StructuredFormatDisplay("{StructuredDisplayString}I")>]
 #endif
     type BigInteger(signInt:int, v : BigNat) =

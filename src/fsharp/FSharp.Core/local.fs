@@ -11,7 +11,6 @@ open System.Collections.Generic
 open System.Runtime.InteropServices
 #if FX_NO_ICLONEABLE
 open Microsoft.FSharp.Core.ICloneableExtensions            
-#else
 #endif  
 
 

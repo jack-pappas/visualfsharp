@@ -165,8 +165,7 @@ type internal InteractiveChecker =
     /// For a given script file, get the CheckOptions implied by the #load closure
     member GetCheckOptionsFromScriptRoot : filename : string * source : string * loadedTimestamp : System.DateTime -> CheckOptions
         
-#if NO_QUICK_SEARCH_HELPERS // only used in QuickSearch prototype
-#else
+#if !NO_QUICK_SEARCH_HELPERS // only used in QuickSearch prototype
     /// For QuickSearch index - not used by VS2008/VS2010/VS11
     member GetSlotsCount : options : CheckOptions -> int
     /// For QuickSearch index - not used by VS2008/VS2010/VS11

@@ -11,8 +11,7 @@ open Microsoft.FSharp.Compiler.TypeChecker
 /// the F# project system calls this to pop up type provider security dialog if needed
 val internal runFromCommandLineToImportingAssemblies : (string -> unit) * string[] * string * string * Exiter -> unit
 
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 
 [<Class>]
 type ErrorLoggerThatAccumulatesErrors = 

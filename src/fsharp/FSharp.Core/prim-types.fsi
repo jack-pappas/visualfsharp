@@ -100,7 +100,6 @@ namespace Microsoft.FSharp.Core
     module ICloneableExtensions =
         type System.Array with
             member Clone : unit -> System.Array            
-#else
 #endif    
        
        
@@ -1331,7 +1330,6 @@ namespace System
         member Item6 : 'T6 with get
         member Item7 : 'T7 with get
         member Rest  : 'TRest with get
-#else
 #endif
 
 namespace Microsoft.FSharp.Core
@@ -1472,8 +1470,7 @@ namespace Microsoft.FSharp.Core
         /// <param name="func"></param>
         /// <returns>'U</returns>
         abstract member Invoke : func:'T -> 'U
-#if FX_NO_CONVERTER
-#else 
+#if !FX_NO_CONVERTER
         /// <summary>Convert an F# first class function value to a value of type <c>System.Converter</c></summary>
         /// <param name="func">The input function.</param>
         /// <returns>A System.Converter of the function type.</returns>
@@ -1540,8 +1537,7 @@ namespace Microsoft.FSharp.Core
         /// <param name="action">The input action.</param>
         /// <returns>The F# function.</returns>
         static member  ToFSharpFunc       : action:Action<'T>            -> ('T -> unit)
-#if FX_NO_CONVERTER
-#else        
+#if !FX_NO_CONVERTER
         /// <summary>Convert the given Converter delegate object to an F# function value</summary>
         /// <param name="converter">The input Converter.</param>
         /// <returns>The F# function.</returns>
@@ -2175,8 +2171,7 @@ namespace Microsoft.FSharp.Core
         val seq : sequence:seq<'T> -> seq<'T>
 
 
-#if FX_NO_EXIT
-#else
+#if !FX_NO_EXIT
         /// <summary>Exit the current hardware isolated process, if security settings permit,
         /// otherwise raise an exception. Calls <c>System.Environment.Exit</c>.</summary>
         /// <param name="exitcode">The exit code to use.</param>
@@ -2200,8 +2195,7 @@ namespace Microsoft.FSharp.Core
         /// <summary>Equivalent to <c>System.Single.NaN</c></summary>
         [<CompiledName("NaNSingle")>]
         val nanf: float32
-#if FX_NO_SYSTEM_CONSOLE
-#else
+#if !FX_NO_SYSTEM_CONSOLE
         /// <summary>Reads the value of the property <c>System.Console.In</c>. </summary>
         [<CompiledName("ConsoleIn")>]
         val stdin<'T> : System.IO.TextReader      
@@ -2419,8 +2413,7 @@ namespace Microsoft.FSharp.Core
         [<CompiledName("Tanh")>]
         val inline tanh     : value:^T -> ^T       when ^T : (static member Tanh     : ^T -> ^T)      and default ^T : float
 
-#if FX_NO_TRUNCATE
-#else
+#if !FX_NO_TRUNCATE
         /// <summary>Overloaded truncate operator.</summary>
         /// <param name="value">The input value.</param>
         /// <returns>The truncated value.</returns>
@@ -3200,7 +3193,6 @@ namespace System
         member IsValueCreated : bool 
         /// <summary>The value contained in the Lazy.</summary>
         member Value : 'T 
-#else
 #endif
 
 
@@ -3264,7 +3256,6 @@ namespace System
         /// <param name="observer">The observer to be added to those that are notified.</param>
         /// <returns>An IDisposable to allow for unsubscription.</returns>
         abstract Subscribe : observer : IObserver<'T> -> System.IDisposable;
-#else
 #endif        
 
 namespace Microsoft.FSharp.Control

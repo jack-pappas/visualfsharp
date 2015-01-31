@@ -54,7 +54,6 @@ namespace System.Collections
         interface 
             abstract CompareTo: o:System.Object * comp:System.Collections.IComparer -> int
         end
-#else
 #endif
 
 namespace Microsoft.FSharp.Core
@@ -520,8 +519,7 @@ namespace System
 #if TUPLE_STRUXT
     // NOTE: Tuple`2 is a struct type. 
     // WARNING: If you change additional tuple types to be structs then you must change 'highestTupleStructType' in tastops.ml
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<DebuggerDisplay("({Item1},{Item2})")>]
 #endif
     [<Struct>]
@@ -538,8 +536,7 @@ namespace System
         interface IComparable 
 #endif
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<DebuggerDisplay("({Item1},{Item2},{Item3})")>]
 #endif
     type Tuple<'T1,'T2,'T3>(t1:'T1,t2:'T2,t3:'T3) =       
@@ -550,8 +547,7 @@ namespace System
         interface IStructuralEquatable 
         interface IComparable 
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<DebuggerDisplay("({Item1},{Item2},{Item3},{Item4})")>]
 #endif
     type Tuple<'T1,'T2,'T3,'T4>(t1:'T1,t2:'T2,t3:'T3,t4:'T4) = 
@@ -563,8 +559,7 @@ namespace System
         interface IStructuralEquatable 
         interface IComparable 
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<DebuggerDisplay("({Item1},{Item2},{Item3},{Item4},{Item5})")>]
 #endif
     type Tuple<'T1,'T2,'T3,'T4,'T5>(t1:'T1,t2:'T2,t3:'T3,t4:'T4,t5:'T5) = 
@@ -577,8 +572,7 @@ namespace System
         interface IStructuralEquatable 
         interface IComparable 
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<DebuggerDisplay("({Item1},{Item2},{Item3},{Item4},{Item5},{Item6})")>]
 #endif
     type Tuple<'T1,'T2,'T3,'T4,'T5,'T6>(t1:'T1,t2:'T2,t3:'T3,t4:'T4,t5:'T5,t6:'T6) = 
@@ -592,8 +586,7 @@ namespace System
         interface IStructuralEquatable 
         interface IComparable 
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<DebuggerDisplay("({Item1},{Item2},{Item3},{Item4},{Item5},{Item6},{Item7})")>]
 #endif
     type Tuple<'T1,'T2,'T3,'T4,'T5,'T6,'T7>(t1:'T1,t2:'T2,t3:'T3,t4:'T4,t5:'T5,t6:'T6,t7:'T7) = 
@@ -608,8 +601,7 @@ namespace System
         interface IStructuralEquatable 
         interface IComparable 
             
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<DebuggerDisplay("({Item1},{Item2},{Item3},{Item4},{Item5},{Item6},{Item7},{Rest})")>]
 #endif
     type Tuple<'T1,'T2,'T3,'T4,'T5,'T6,'T7,'TRest>(t1:'T1,t2:'T2,t3:'T3,t4:'T4,t5:'T5,t6:'T6,t7:'T7,rest:'TRest) = 
@@ -3171,16 +3163,14 @@ namespace Microsoft.FSharp.Core
     // Refs
     //-------------------------------------------------------------------------
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<DebuggerDisplay("{contents}")>]
 #endif
     [<StructuralEquality; StructuralComparison>]
     [<CompiledName("FSharpRef`1")>]
     type Ref<'T> = 
         { 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
           [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
 #endif
           mutable contents: 'T }
@@ -3195,8 +3185,7 @@ namespace Microsoft.FSharp.Core
     //-------------------------------------------------------------------------
 
     [<DefaultAugmentation(false)>]
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<DebuggerDisplay("Some({Value})")>]
 #endif
     [<CompilationRepresentation(CompilationRepresentationFlags.UseNullAsTrueValue)>]
@@ -3210,20 +3199,17 @@ namespace Microsoft.FSharp.Core
         [<CompilationRepresentation(CompilationRepresentationFlags.Instance)>]
         member x.Value = match x with Some x -> x | None -> raise (new System.InvalidOperationException("Option.Value"))
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
         [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
 #endif
         member x.IsNone = match x with None -> true | _ -> false
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
         [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
 #endif
         member x.IsSome = match x with Some _ -> true | _ -> false
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
         [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
 #endif
         static member None : 'T option = None
@@ -3255,12 +3241,10 @@ namespace Microsoft.FSharp.Collections
     open Microsoft.FSharp.Core.BasicInlinedOperations
 
     [<DefaultAugmentation(false)>]
-#if FX_NO_DEBUG_PROXIES
-#else
+#if !FX_NO_DEBUG_PROXIES
     [<System.Diagnostics.DebuggerTypeProxyAttribute(typedefof<ListDebugView<_>>)>]
 #endif
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<DebuggerDisplay("{DebugDisplay,nq}")>]
 #endif
     [<CodeAnalysis.SuppressMessage("Microsoft.Naming", "CA1710:IdentifiersShouldHaveCorrectSuffix")>]
@@ -3287,8 +3271,7 @@ namespace Microsoft.FSharp.Collections
                | [] -> n 
                | _::t -> if n > ListDebugViewMaxLength then n else count t (n+1) 
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
            [<DebuggerBrowsable(DebuggerBrowsableState.RootHidden)>]
 #endif
            member x.Items =
@@ -3384,14 +3367,12 @@ namespace Microsoft.FSharp.Collections
                else nth t (n - 1)
 
     type List<'T> with
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
         [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
 #endif
         member l.Length = PrivateListHelpers.lengthAcc 0 l
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
         [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
 #endif
         member l.DebugDisplay = 
@@ -3406,15 +3387,13 @@ namespace Microsoft.FSharp.Collections
         member l.Head   = match l with a :: _ -> a | [] -> raise (System.InvalidOperationException(SR.GetString(SR.inputListWasEmpty)))
         member l.Tail   = match l with _ :: b -> b | [] -> raise (System.InvalidOperationException(SR.GetString(SR.inputListWasEmpty)))
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
         [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
 #endif
         member l.IsEmpty  = match l with [] -> true | _ -> false
         member l.Item with get(index) = PrivateListHelpers.nth l index
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
         [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
 #endif
         static member Empty       : 'T list = []
@@ -3862,8 +3841,7 @@ namespace Microsoft.FSharp.Core
 
         [<CompiledName("Decrement")>]
         let decr x = x.contents <- x.contents - 1
-#if FX_NO_EXIT
-#else
+#if !FX_NO_EXIT
         [<CompiledName("Exit")>]
         let exit (n:int) = System.Environment.Exit(n); failwith "System.Environment.Exit did not exit!"
 #endif
@@ -4238,14 +4216,12 @@ namespace Microsoft.FSharp.Core
         module Attributes = 
             open System.Runtime.CompilerServices
 
-#if FX_NO_DEFAULT_DEPENDENCY_TYPE
-#else
+#if !FX_NO_DEFAULT_DEPENDENCY_TYPE
             [<Dependency("FSharp.Core",LoadHint.Always)>] 
             [<assembly: System.Runtime.CompilerServices.DefaultDependency(System.Runtime.CompilerServices.LoadHint.Always)>] 
 #endif
 
-#if FX_NO_COMVISIBLE
-#else
+#if !FX_NO_COMVISIBLE
             [<assembly: System.Runtime.InteropServices.ComVisible(false)>]
 #endif            
             [<assembly: System.CLSCompliant(true)>]
@@ -4254,13 +4230,9 @@ namespace Microsoft.FSharp.Core
             [<assembly: System.Security.SecurityTransparent>] // assembly is fully transparent
             [<assembly: System.Security.SecurityRules(System.Security.SecurityRuleSet.Level2)>] // v4 transparency; soon to be the default, but not yet
 #else
-#if FX_NO_SECURITY_PERMISSIONS
-#else
-#if FX_SIMPLE_SECURITY_PERMISSIONS
+#if !FX_NO_SECURITY_PERMISSIONS && FX_SIMPLE_SECURITY_PERMISSIONS
             // REVIEW: Need to choose a specific permission for the action to be applied to
             [<assembly: System.Security.Permissions.SecurityPermission(System.Security.Permissions.SecurityAction.RequestMinimum)>]
-#else
-#endif
 #endif
 #endif
             do ()
@@ -4314,8 +4286,7 @@ namespace Microsoft.FSharp.Core
         [<CompiledName("Identity")>]
         let id x = x
 
-#if FX_NO_SYSTEM_CONSOLE
-#else
+#if !FX_NO_SYSTEM_CONSOLE
         // std* are TypeFunctions with the effect of reading the property on instantiation.
         // So, direct uses of stdout should capture the current System.Console.Out at that point.
         [<CompiledName("ConsoleIn")>]
@@ -5810,7 +5781,6 @@ namespace System
     [<AllowNullLiteral>]
     type IObservable<'T> =
         abstract Subscribe : observer : IObserver<'T> -> System.IDisposable;
-#else
 #endif
 
 namespace Microsoft.FSharp.Control
@@ -5926,7 +5896,6 @@ namespace Microsoft.FSharp.Control
     [<assembly: SuppressMessage("Microsoft.Design", "CA1036:OverrideMethodsOnComparableTypes", Scope="type", Target="System.Tuple`6",Justification="This type matches the design of Dev10 tuples")>]
     [<assembly: SuppressMessage("Microsoft.Design", "CA1036:OverrideMethodsOnComparableTypes", Scope="type", Target="System.Tuple`7",Justification="This type matches the design of Dev10 tuples")>]
     [<assembly: SuppressMessage("Microsoft.Design", "CA1036:OverrideMethodsOnComparableTypes", Scope="type", Target="System.Tuple`8",Justification="This type matches the design of Dev10 tuples")>]
-#else
 #endif
 
     [<assembly: SuppressMessage("Microsoft.Design", "CA1036:OverrideMethodsOnComparableTypes", Scope="type", Target="Microsoft.FSharp.Core.Choice`5",Justification="F# implements IComparable as a way to implement its generic equality")>]

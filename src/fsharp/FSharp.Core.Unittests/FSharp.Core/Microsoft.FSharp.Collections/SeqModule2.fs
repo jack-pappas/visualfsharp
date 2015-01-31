@@ -389,8 +389,7 @@ type SeqModule2() =
     member this.SingletonCollectWithException () =
         this.MapWithExceptionTester (fun f-> Seq.collect (f >> Seq.singleton))
 
-#if FX_NO_LINQ
-#else     
+#if !FX_NO_LINQ
     [<Test>]
     member this.SystemLinqSelectWithSideEffects () =
         this.MapWithSideEffectsTester (fun f s -> System.Linq.Enumerable.Select(s, Func<_,_>(f))) false
@@ -478,8 +477,7 @@ type SeqModule2() =
         
         VerifySeqsEqual expectedint resultInt
 
-#if FX_NO_CHAR_PARSE
-#else        
+#if !FX_NO_CHAR_PARSE
         // string Seq
         let funcStr (y:string) = y+"ist"
        

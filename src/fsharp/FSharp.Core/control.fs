@@ -304,8 +304,7 @@ namespace Microsoft.FSharp.Control
     type BindingFlags = System.Reflection.BindingFlags
 #endif
 
-#if FX_NO_TASK
-#else
+#if !FX_NO_TASK
     open System.Threading
     open System.Threading.Tasks
     
@@ -402,8 +401,7 @@ namespace Microsoft.FSharp.Control
     
         [<Literal>]
         static let bindLimitBeforeHijack = 300 
-#if FX_NO_THREAD_STATIC
-#else
+#if !FX_NO_THREAD_STATIC
         [<ThreadStatic>]
         [<DefaultValue>]
         static val mutable private thisThreadHasTrampoline : bool
@@ -429,8 +427,7 @@ namespace Microsoft.FSharp.Control
                 | Some newAction -> 
                     cont <- None
                     loop newAction
-#if FX_NO_THREAD_STATIC
-#else
+#if !FX_NO_THREAD_STATIC
             let thisIsTopTrampoline =
                 if Trampoline.thisThreadHasTrampoline then
                     false
@@ -441,8 +438,7 @@ namespace Microsoft.FSharp.Control
             try
                 loop firstAction
             finally
-#if FX_NO_THREAD_STATIC
-#else
+#if !FX_NO_THREAD_STATIC
                 if thisIsTopTrampoline then
                     Trampoline.thisThreadHasTrampoline <- false
 #endif       
@@ -493,8 +489,7 @@ namespace Microsoft.FSharp.Control
         
         static let unfake FakeUnit = ()
         // preallocate context-switching callbacks
-#if FX_NO_SYNC_CONTEXT
-#else
+#if !FX_NO_SYNC_CONTEXT
         // Preallocate the delegate
         // This should be the only call to SynchronizationContext.Post in this library. We must always install a trampoline.        
         let sendOrPostCallback = 
@@ -512,8 +507,7 @@ namespace Microsoft.FSharp.Control
                     this.Protect f |> unfake
                     )
 
-#if FX_NO_PARAMETERIZED_THREAD_START
-#else        
+#if !FX_NO_PARAMETERIZED_THREAD_START
         // This should be the only call to Thread.Start in this library. We must always install a trampoline.
         let threadStartCallbackForStartThreadWithTrampoline = 
                 ParameterizedThreadStart(fun o ->
@@ -522,8 +516,7 @@ namespace Microsoft.FSharp.Control
                     )
 #endif
 
-#if FX_NO_SYNC_CONTEXT
-#else                    
+#if !FX_NO_SYNC_CONTEXT
         member this.Post (ctxt: SynchronizationContext)  (f : unit -> FakeUnitValue) =
             ctxt.Post (sendOrPostCallback, state=(f |> box))
             FakeUnit
@@ -911,8 +904,7 @@ namespace Microsoft.FSharp.Control
         //----------------------------------
         // DERIVED SWITCH TO HELPERS
 
-#if FX_NO_SYNC_CONTEXT
-#else
+#if !FX_NO_SYNC_CONTEXT
         let switchTo (ctxt: SynchronizationContext) =
             protectedPrimitive(fun ({ aux = aux } as args) ->
                 aux.trampolineHolder.Post ctxt  (fun () -> args.cont () ))
@@ -999,8 +991,7 @@ namespace Microsoft.FSharp.Control
         [<AutoSerializable(false)>]        
         type SuspendedAsync<'T>(args : AsyncParams<'T>) =
             let ctxt = getSyncContext ()
-#if FX_NO_SYNC_CONTEXT
-#else
+#if !FX_NO_SYNC_CONTEXT
             let thread = 
                 match ctxt with
                 |   null -> null // saving a thread-local access
@@ -1229,8 +1220,7 @@ namespace Microsoft.FSharp.Control
         let StartWithContinuations(token:CancellationToken, a:Async<'T>, cont, econt, ccont) : unit =
             startAsync token (cont >> fake) (econt >> fake) (ccont >> fake) a |> ignore
             
-#if FX_NO_TASK
-#else
+#if !FX_NO_TASK
         type VolatileBarrier() =
             [<VolatileField>]
             let mutable isStopped = false
@@ -1338,8 +1328,7 @@ namespace Microsoft.FSharp.Control
             let token = defaultArg cancellationToken (!defaultCancellationTokenSource).Token
             CancellationTokenOps.Start (token, computation)
 
-#if FX_NO_TASK
-#else
+#if !FX_NO_TASK
         static member StartAsTask (computation,?taskCreationOptions,?cancellationToken)=
             let token = defaultArg cancellationToken (!defaultCancellationTokenSource).Token        
             CancellationTokenOps.StartAsTask(token,computation,taskCreationOptions)
@@ -1413,8 +1402,7 @@ namespace Microsoft.FSharp.Control
                             |> unfake);
                     FakeUnit))
 
-#if FX_NO_TASK
-#else
+#if !FX_NO_TASK
     // Contains helpers that will attach continuation to the given task.
     // Should be invoked as a part of protectedPrimitive(withResync) call
     module TaskHelpers = 
@@ -1848,8 +1836,7 @@ namespace Microsoft.FSharp.Control
                     let beginAction = fun (a1,callback,state) -> AsBeginEndHelpers.beginAction ((computation a1), callback, state)
                     beginAction, AsBeginEndHelpers.endAction<'T>, AsBeginEndHelpers.cancelAction<'T>
 
-#if FX_NO_CREATE_DELEGATE
-#else
+#if !FX_NO_CREATE_DELEGATE
         static member AwaitEvent(event:IEvent<'Delegate,'T>, ?cancelAction) : Async<'T> =
             async { let! token = getCancellationToken()
                     let resultCell = new ResultCell<_>()
@@ -1927,8 +1914,7 @@ namespace Microsoft.FSharp.Control
                                                
                 return Async.AsyncWaitAsyncWithTimeout(innerCTS, resultCell,millisecondsTimeout) }
 
-#if FX_NO_SYNC_CONTEXT
-#else
+#if !FX_NO_SYNC_CONTEXT
 
         static member SwitchToContext syncContext =
             async { match syncContext with 
@@ -1960,8 +1946,7 @@ namespace Microsoft.FSharp.Control
         static member TryCancelled (p: Async<'T>,f) = 
             whenCancelledA f p
 
-#if FX_NO_TASK
-#else
+#if !FX_NO_TASK
         static member AwaitTask (task:Task<'T>) : Async<'T> = 
             protectedPrimitiveWithResync (fun args -> 
                 TaskHelpers.continueWith(task, args)
@@ -2030,8 +2015,7 @@ namespace Microsoft.FSharp.Control
     module WebExtensions =
         open AsyncBuilderImpl
 
-#if FX_NO_WEB_REQUESTS
-#else
+#if !FX_NO_WEB_REQUESTS
         
         type System.Net.WebRequest with
             [<CompiledName("AsyncGetResponse")>] // give the extension member a 'nice', unmangled compiled name, unique within this module
@@ -2052,8 +2036,7 @@ namespace Microsoft.FSharp.Control
 
 #endif
      
-#if FX_NO_WEB_CLIENT
-#else
+#if !FX_NO_WEB_CLIENT
         
         type System.Net.WebClient with
             [<CompiledName("AsyncDownloadString")>] // give the extension member a 'nice', unmangled compiled name, unique within this module

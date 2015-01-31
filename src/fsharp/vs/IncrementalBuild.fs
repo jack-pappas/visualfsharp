@@ -1631,8 +1631,7 @@ module internal IncrementalFSharpBuild =
                 result
             GetSlotByInput("FileNames",(rangeStartup,filename,false),partialBuild,CompareFileNames)
         
-#if NO_QUICK_SEARCH_HELPERS // only used in QuickSearch prototype
-#else
+#if !NO_QUICK_SEARCH_HELPERS // only used in QuickSearch prototype
         member __.GetSlotsCount () =
           let expr = GetExprByName(partialBuild,"FileNames")
           let id = BuildRuleExpr.GetId(expr)

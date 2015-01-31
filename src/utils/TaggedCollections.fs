@@ -570,8 +570,7 @@ namespace Internal.Utilities.Collections.Tagged
         let ofArray comparer l = Array.fold (fun acc k -> add comparer k acc) empty l    
 
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<System.Diagnostics.DebuggerDisplay ("Count = {Count}")>]
 #endif
     [<Sealed>]
@@ -785,8 +784,7 @@ namespace Internal.Utilities.Collections.Tagged
 #endif
             | MapNode(_,_,l,r,_) -> sizeAux (sizeAux (acc+1) l) r 
 
-#if ONE 
-#else
+#if !ONE
         let MapOne(k,v) = MapNode(k,v,MapEmpty,MapEmpty,1)
 #endif
         
@@ -1099,8 +1097,7 @@ namespace Internal.Utilities.Collections.Tagged
                   member self.Dispose() = ()}
 
 
-#if FX_NO_DEBUG_DISPLAYS
-#else
+#if !FX_NO_DEBUG_DISPLAYS
     [<System.Diagnostics.DebuggerDisplay ("Count = {Count}")>]
 #endif
     [<Sealed>]

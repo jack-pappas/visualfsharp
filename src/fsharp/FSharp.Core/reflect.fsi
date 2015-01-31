@@ -29,8 +29,7 @@ type UnionCaseInfo =
     /// <returns>An array of custom attributes.</returns>
     member GetCustomAttributes: attributeType:System.Type -> obj[]
 
-#if FX_NO_CUSTOMATTRIBUTEDATA
-#else
+#if !FX_NO_CUSTOMATTRIBUTEDATA
     /// <summary>Returns the custom attributes data associated with the case.</summary>
     /// <returns>An list of custom attribute data items.</returns>
     member GetCustomAttributesData: unit -> System.Collections.Generic.IList<CustomAttributeData>
@@ -71,8 +70,7 @@ type FSharpValue =
     /// <returns>A function to read the specified field from the record.</returns>
     static member PreComputeRecordFieldReader : info:PropertyInfo -> (obj -> obj)
 
-#if FX_RESHAPED_REFLECTION
-#else
+#if !FX_RESHAPED_REFLECTION
     /// <summary>Creates an instance of a record type.</summary>
     ///
     /// <remarks>Assumes the given input is a record type.</remarks>
@@ -264,8 +262,7 @@ type FSharpValue =
 /// <summary>Contains operations associated with constructing and analyzing F# types such as records, unions and tuples</summary>
 type FSharpType =
 
-#if FX_RESHAPED_REFLECTION
-#else
+#if !FX_RESHAPED_REFLECTION
     /// <summary>Reads all the fields from a record value, in declaration order</summary>
     ///
     /// <remarks>Assumes the given input is a record value. If not, ArgumentException is raised.</remarks>

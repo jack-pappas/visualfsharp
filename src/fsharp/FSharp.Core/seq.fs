@@ -826,7 +826,6 @@ namespace Microsoft.FSharp.Collections
     
 #if FX_NO_ICLONEABLE
         open Microsoft.FSharp.Core.ICloneableExtensions            
-#else
 #endif    
 
         open Microsoft.FSharp.Core.CompilerServices.RuntimeHelpers

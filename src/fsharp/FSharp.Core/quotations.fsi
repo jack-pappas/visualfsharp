@@ -3,8 +3,7 @@
 /// <summary>Types and functions related to expression quotations</summary>
 namespace Microsoft.FSharp.Quotations
 
-#if FX_MINIMAL_REFLECTION // not on Compact Framework 
-#else
+#if !FX_MINIMAL_REFLECTION // not on Compact Framework 
 open Microsoft.FSharp.Core
 open Microsoft.FSharp.Collections
 open Microsoft.FSharp.Reflection

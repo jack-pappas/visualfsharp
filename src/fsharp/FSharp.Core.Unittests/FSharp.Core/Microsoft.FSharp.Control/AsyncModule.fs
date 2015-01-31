@@ -445,8 +445,7 @@ type AsyncModule() =
         let out = out.Replace("\r\n", "\n")
         let expected = expected.Replace("\r\n", "\n")
         Assert.AreEqual(expected, out)
-#if OPEN_BUILD
-#else
+#if !OPEN_BUILD
     [<Test>]
     member this.``ContinuationsThreadingDetails.AsyncWithSyncContext``() =
         this.RunExeAndExpectOutput("AsyncWithSyncContext.exe", """

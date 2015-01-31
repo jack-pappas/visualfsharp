@@ -26,8 +26,7 @@ open Microsoft.FSharp.Compiler.AbstractIL.IL
 open Microsoft.FSharp.Compiler.Lib
 open Microsoft.FSharp.Compiler.Range
 open Microsoft.FSharp.Compiler.Lexhelp
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 open Microsoft.FSharp.Compiler.Ilxgen
 #endif
 
@@ -813,8 +812,7 @@ let ReportTime (tcConfig:TcConfig) descr =
 
     nPrev := Some descr
 
-#if NO_COMPILER_BACKEND
-#else  
+#if !NO_COMPILER_BACKEND
 //----------------------------------------------------------------------------
 // OPTIMIZATION - support - addDllToOptEnv
 //----------------------------------------------------------------------------

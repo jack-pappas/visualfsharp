@@ -129,8 +129,7 @@ type [<Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Naming", "CA1704:Iden
     let mutable resources : ITaskItem[] = [||]
     let mutable sources : ITaskItem[] = [||]
     let mutable targetType : string = null 
-#if FX_ATLEAST_35   
-#else 
+#if !FX_ATLEAST_35
     let mutable toolExe : string = "fsc.exe"
 #endif    
     let mutable warningLevel : string = null
@@ -269,8 +268,7 @@ type [<Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Naming", "CA1704:Iden
         with get() = versionFile
         and set(s) = versionFile <- s
 
-#if FX_ATLEAST_35
-#else
+#if !FX_ATLEAST_35
     // Allow overriding to the executable name "fsc.exe"
     member fsc.ToolExe
         with get() = toolExe

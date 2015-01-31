@@ -36,8 +36,7 @@ module internal MSBuildResolver =
         | RuntimeLike      // Don't allow stubbed-out reference assemblies
         | DesigntimeLike 
 
-#if SILVERLIGHT
-#else
+#if !SILVERLIGHT
 
     val DotNetFrameworkReferenceAssembliesRootDirectory : string
 

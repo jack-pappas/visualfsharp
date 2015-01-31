@@ -1355,8 +1355,7 @@ module Printf =
     [<CompiledName("PrintFormatToStringThenFail")>]
     let failwithf fmt = ksprintf failwith fmt
 
-#if FX_NO_SYSTEM_CONSOLE
-#else    
+#if !FX_NO_SYSTEM_CONSOLE
 #if EXTRAS_FOR_SILVERLIGHT_COMPILER
     [<CompiledName("PrintFormat")>]
     let printf fmt = fprintf (!outWriter) fmt

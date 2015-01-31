@@ -775,13 +775,10 @@ let unpickleObjWithDanglingCcus file ilscope (iILModule:ILModuleDef) u (phase2by
              ifile=file 
              iILModule = iILModule }
         let res = u st1
-#if DEBUG
-#if LAZY_UNPICKLE
-#else
+#if DEBUG && !LAZY_UNPICKLE
         check ilscope st1.itycons;
         check ilscope st1.ivals;
         check ilscope st1.itypars;
-#endif
 #endif
         res
 

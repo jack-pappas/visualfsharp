@@ -132,8 +132,7 @@ open System.Linq
 open System.Collections.Generic
 open System.Linq.Expressions
 open System.Reflection
-#if FX_NO_REFLECTION_EMIT
-#else
+#if !FX_NO_REFLECTION_EMIT
 open System.Reflection.Emit
 #endif
 open Microsoft.FSharp
@@ -215,8 +214,7 @@ module LeafExpressionConverter =
             match tm with
             | Call(obj,minfo2,args) 
                 when (
-#if FX_NO_REFLECTION_METADATA_TOKENS
-#else
+#if !FX_NO_REFLECTION_METADATA_TOKENS
                         minfo.MetadataToken = minfo2.MetadataToken &&
 #endif
                         if isg1 then minfo2.IsGenericMethod && gmd = minfo2.GetGenericMethodDefinition()
@@ -603,8 +601,7 @@ module LeafExpressionConverter =
                 let argsP = ConvExprsToLinq env args 
                 Expression.Call(ConvObjArg env objOpt None, minfo, argsP) |> asExpr  
 
-#if NO_CURRIED_FUNCTION_OPTIMIZATIONS
-#else
+#if !NO_CURRIED_FUNCTION_OPTIMIZATIONS
         // f x1 x2 x3 x4 --> InvokeFast4
         | Patterns.Application(Patterns.Application(Patterns.Application(Patterns.Application(f, arg1), arg2), arg3), arg4) -> 
             // TODO: amortize this computation based on f.Type
@@ -666,8 +663,7 @@ module LeafExpressionConverter =
             let argsR = ConvExprsToLinq env args 
             Expression.Call((null:Expression), methInfo, argsR) |> asExpr
 
-#if NO_PATTERN_MATCHING_IN_INPUT_LANGUAGE
-#else
+#if !NO_PATTERN_MATCHING_IN_INPUT_LANGUAGE
         | Patterns.UnionCaseTest(e, unionCaseInfo) -> 
             let methInfo = Reflection.FSharpValue.PreComputeUnionTagMemberInfo(unionCaseInfo.DeclaringType, showAll)
             let obj = ConvExprToLinqInContext env e 

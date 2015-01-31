@@ -45,7 +45,6 @@ val internal p_typ : TType pickler
 val internal pickleModuleOrNamespace : pickler<ModuleOrNamespace>
 val internal pickleModuleInfo : pickler<PickledModuleInfo>
 val pickleObjWithDanglingCcus : string -> Env.TcGlobals -> scope:CcuThunk -> ('T pickler) -> 'T -> byte[]
-#else
 #endif
 
 type ReaderState 

@@ -633,13 +633,11 @@ module internal Impl =
         //   Item1, Item2, ..., Item<maxTuple-1>
         //   Item1, Item2, ..., Item<maxTuple-1>, Rest
         // The PropertyInfo may not come back in order, so ensure ordering here.
-#if FX_ATLEAST_PORTABLE
-#else
+#if !FX_ATLEAST_PORTABLE
         assert(maxTuple < 10) // Alphasort will only works for upto 9 items: Item1, Item10, Item2, Item3, ..., Item9, Rest
 #endif
         let props = props |> Array.sortBy (fun p -> p.Name) // they are not always in alphabetic order
-#if FX_ATLEAST_PORTABLE  
-#else      
+#if !FX_ATLEAST_PORTABLE
         assert(props.Length <= maxTuple)
         assert(let haveNames   = props |> Array.map (fun p -> p.Name)
                let expectNames = Array.init props.Length (fun i -> let j = i+1 // index j = 1,2,..,props.Length <= maxTuple
@@ -868,8 +866,7 @@ type UnionCaseInfo(typ: System.Type, tag:int) =
     
     member x.GetCustomAttributes(attributeType) = getMethInfo().GetCustomAttributes(attributeType,false)
 
-#if FX_NO_CUSTOMATTRIBUTEDATA
-#else
+#if !FX_NO_CUSTOMATTRIBUTEDATA
     member x.GetCustomAttributesData() = getMethInfo().GetCustomAttributesData()
 #endif    
     member x.Tag = tag

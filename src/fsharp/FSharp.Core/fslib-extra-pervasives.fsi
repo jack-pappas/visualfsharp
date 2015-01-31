@@ -13,8 +13,7 @@ module ExtraTopLevelOperators =
     open Microsoft.FSharp.Text
     open Microsoft.FSharp.Math
 
-#if FX_NO_SYSTEM_CONSOLE
-#else    
+#if !FX_NO_SYSTEM_CONSOLE
     /// <summary>Print to <c>stdout</c> using the given format.</summary>
     /// <param name="format">The formatter.</param>
     /// <returns>The formatted result.</returns>

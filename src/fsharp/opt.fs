@@ -302,8 +302,7 @@ type OptimizationSettings =
     /// expand "let x = (exp1,exp2,...)" bind fields as prior tmps 
     member x.ExpandStructrualValues() = x.localOpt () 
 
-#if NO_COMPILER_BACKEND
-#else
+#if !NO_COMPILER_BACKEND
 
 type cenv =
     { g: Env.TcGlobals;
@@ -414,8 +413,7 @@ let mkValInfo info (v:Val)  = { ValExprInfo=info.Info; ValMakesNoCriticalTailcal
 (* Bind a value *)
 let BindInternalLocalVal cenv (v:Val) vval env = 
     let vval = if v.IsMutable then UnknownValInfo else vval
-#if CHECKED
-#else
+#if !CHECKED
     match vval.ValExprInfo with 
     | UnknownValue -> env
     | _ -> 
@@ -431,8 +429,7 @@ let BindExternalLocalVal cenv (v:Val) vval env =
     if verboseOptimizationInfo then dprintn ("*** Binding "^v.LogicalName); 
     let vval = if v.IsMutable then {vval with ValExprInfo=UnknownValue } else vval
     let env = 
-#if CHECKED
-#else
+#if !CHECKED
         match vval.ValExprInfo with 
         | UnknownValue -> env  
         | _ -> 

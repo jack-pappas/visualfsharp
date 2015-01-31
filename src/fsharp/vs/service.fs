@@ -1847,8 +1847,7 @@ type BackgroundCompiler(notifyFileTypeCheckStateIsDirty:NotifyFileTypeCheckState
                                         ParseHadErrors = anyErrors
                                         DependencyFiles = dependencyFiles})) 
      
-#if NO_QUICK_SEARCH_HELPERS // only used in QuickSearch prototype
-#else
+#if !NO_QUICK_SEARCH_HELPERS // only used in QuickSearch prototype
     member bc.UntypedParseForSlot(slot,options) =
         use t = Trace.Call("SyncOp","UntypedParseForSlot", fun _->"")
         reactor.RunSyncOp (fun () -> 
@@ -2053,8 +2052,7 @@ type (* internal *) InteractiveChecker(notifyFileTypeCheckStateIsDirty) =
     member ic.UntypedParse(filename, source, options) =
         untypedCheckMru.Get((filename, source, options))
         
-#if NO_QUICK_SEARCH_HELPERS // only used in QuickSearch prototype
-#else
+#if !NO_QUICK_SEARCH_HELPERS // only used in QuickSearch prototype
     member ic.GetSlotsCount options =
         Trace.PrintLine("CompilerServices", fun () -> sprintf "GetSlotsCount, ProjectName = %s\n  " options.ProjectFileName)         
         backgroundCompiler.GetSlotsCount(options)

@@ -133,8 +133,7 @@ module ExtraTopLevelOperators =
     [<CompiledName("PrintFormatLineToTextWriter")>]
     let fprintfn (os:TextWriter) fp = Printf.fprintfn os fp 
     
-#if FX_NO_SYSTEM_CONSOLE
-#else    
+#if !FX_NO_SYSTEM_CONSOLE
     [<CompiledName("PrintFormat")>]
     let printf      fp = Printf.printf      fp 
 
@@ -167,14 +166,13 @@ module ExtraTopLevelOperators =
     let inline int8 x = sbyte x
 
 
-    #if FX_MINIMAL_REFLECTION // not on Compact Framework 
-    #else
+#if !FX_MINIMAL_REFLECTION // not on Compact Framework 
     [<CompiledName("SpliceExpression")>]
     let (~%) (_:Microsoft.FSharp.Quotations.Expr<'a>) : 'a = raise <| InvalidOperationException(SR.GetString(SR.firstClassUsesOfSplice)) 
 
     [<CompiledName("SpliceUntypedExpression")>]
     let (~%%) (_: Microsoft.FSharp.Quotations.Expr) : 'a = raise <| InvalidOperationException (SR.GetString(SR.firstClassUsesOfSplice)) 
-    #endif
+#endif
 
     [<assembly: AutoOpen("Microsoft.FSharp")>]
     [<assembly: AutoOpen("Microsoft.FSharp.Core.LanguagePrimitives.IntrinsicOperators")>]

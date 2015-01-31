@@ -10,8 +10,7 @@ open FSharp.Core.Unittests.LibraryTestFx
 open NUnit.Framework
 open System.Threading
 
-#if FX_NO_TPL_PARALLEL
-#else
+#if !FX_NO_TPL_PARALLEL
 open System.Threading.Tasks
 #endif
 
@@ -114,8 +113,7 @@ type AsyncType() =
                 Assert.IsTrue(!result = "Cancel" || !result = "Ok")
         )
 
-#if FX_NO_TPL_PARALLEL
-#else
+#if !FX_NO_TPL_PARALLEL
 
     member private this.WaitASec (t:Task) =
         let result = t.Wait(TimeSpan(hours=0,minutes=0,seconds=1))

@@ -38,8 +38,7 @@ type Fsc = class
              member Resources : Microsoft.Build.Framework.ITaskItem [] with get,set
              member Sources : Microsoft.Build.Framework.ITaskItem [] with get,set
              member TargetType : string with get,set
-#if FX_ATLEAST_35
-#else
+#if !FX_ATLEAST_35
              member ToolExe : string with get,set
 #endif             
              member ToolPath : string with get,set

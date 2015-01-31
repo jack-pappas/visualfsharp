@@ -2,8 +2,7 @@
 
 namespace Microsoft.FSharp.Quotations
 
-#if FX_MINIMAL_REFLECTION
-#else
+#if !FX_MINIMAL_REFLECTION
 open System
 open System.IO
 open System.Reflection
@@ -132,8 +131,7 @@ type Var(name: string, typ:Type, ?isMutable: bool) =
                 if System.Object.ReferenceEquals(v,v2) then 0 else
                 let c = compare v.Name v2.Name 
                 if c <> 0 then c else 
-#if FX_NO_REFLECTION_METADATA_TOKENS // not available on Compact Framework
-#else
+#if !FX_NO_REFLECTION_METADATA_TOKENS // not available on Compact Framework
                 let c = compare v.Type.MetadataToken v2.Type.MetadataToken 
                 if c <> 0 then c else 
                 let c = compare v.Type.Module.MetadataToken v2.Type.Module.MetadataToken 
@@ -1536,8 +1534,7 @@ module Patterns =
 
     let decodedTopResources = new Dictionary<Assembly * string, int>(10,HashIdentity.Structural)
 
-#if FX_NO_REFLECTION_METADATA_TOKENS
-#else
+#if !FX_NO_REFLECTION_METADATA_TOKENS
 #if FX_NO_REFLECTION_MODULE_HANDLES // not available on Silverlight
     [<StructuralEquality;StructuralComparison>]
     type ModuleHandle = ModuleHandle of string * string
@@ -1699,8 +1696,7 @@ module Patterns =
             let qdataResources = 
                 // dynamic assemblies don't support the GetManifestResourceNames 
                 match assem with 
-#if FX_NO_REFLECTION_EMIT
-#else
+#if !FX_NO_REFLECTION_EMIT
                 | :? System.Reflection.Emit.AssemblyBuilder -> []
 #endif
                 | _ -> 
