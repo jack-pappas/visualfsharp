@@ -13,7 +13,11 @@ namespace Microsoft.FSharp.Core
     /// <summary>The type 'unit', which has only one value "()". This value is special and
     /// always uses the representation 'null'.</summary>
     type Unit =
-       interface System.IComparable
+        struct
+            interface System.IComparable
+            interface System.IComparable<Unit>
+            interface System.IEquatable<Unit>
+        end
         
     /// <summary>The type 'unit', which has only one value "()". This value is special and
     /// always uses the representation 'null'.</summary>

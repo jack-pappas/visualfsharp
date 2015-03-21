@@ -24,12 +24,18 @@ namespace Microsoft.FSharp.Core
     // Unit
 
     [<CodeAnalysis.SuppressMessage("Microsoft.Design", "CA1036:OverrideMethodsOnComparableTypes")>] // No op_equality on unit  
-    type Unit() =
-        override x.GetHashCode() = 0
-        override x.Equals(obj:obj) = 
-            match obj with null -> true | :? Unit -> true | _ -> false
-        interface System.IComparable with 
-            member x.CompareTo(_obj:obj) = 0
+    type Unit =
+        struct
+            override x.GetHashCode() = 0
+            override x.Equals(obj:obj) =
+                match obj with null -> true | :? Unit -> true | _ -> false
+            interface System.IEquatable<Unit> with
+                member __.Equals _other = true
+            interface System.IComparable with
+                member __.CompareTo(_obj:obj) = 0
+            interface System.IComparable<Unit> with
+                member __.CompareTo _other = 0
+        end
         
     and unit = Unit
 
