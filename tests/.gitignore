@@ -1,4 +1,13 @@
+# Ignore test results
+TestResults/
+
+# Ignore executables and temporary files generated for/by fsharpqa test cases
+fsharpqa/**/*.exe
+fsharpqa/**/*.dll
+fsharpqa/**/*.pdb
+fsharpqa/**/*.tmp
+
+# TODO : Are these still useful? If not, remove them.
 FSharp_*
 FSharpQA_*
 CoreUnit_*
-TestResults
