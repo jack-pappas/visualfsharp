@@ -559,7 +559,7 @@ type References() =
         DoWithTempFile "Test.fsproj"(fun projFile ->
             let dirName = Path.GetDirectoryName(projFile)
             let libDirName = Directory.CreateDirectory(Path.Combine(dirName, "lib")).FullName
-            let codeBase = (new Uri(Assembly.GetExecutingAssembly().CodeBase)).LocalPath |> Path.GetDirectoryName
+            let codeBase = (new Uri(Assembly.GetExecutingAssembly().EscapedCodeBase)).LocalPath |> Path.GetDirectoryName
             let refLibPath = Path.Combine(libDirName, "nunit.core.dll")
             File.Copy(Path.Combine(codeBase, "nunit.core.dll"), refLibPath)
             File.AppendAllText(projFile, TheTests.SimpleFsprojText([], [refLibPath], ""))
@@ -574,7 +574,7 @@ type References() =
                 let l = new List<ReferenceContainerNode>()
                 project.FindNodesOfType(l)
                 l.[0]
-            let mscorlibPath = (new Uri("".GetType().Assembly.CodeBase)).LocalPath
+            let mscorlibPath = (new Uri("".GetType().Assembly.EscapedCodeBase)).LocalPath
             let selectorData = new VSCOMPONENTSELECTORDATA(``type`` = VSCOMPONENTTYPE.VSCOMPONENTTYPE_ComPlus, bstrFile = mscorlibPath)
             refContainer.AddReferenceFromSelectorData(selectorData) |> Assert.IsNotNull
             let l = new List<AssemblyReferenceNode>()
@@ -671,14 +671,14 @@ type References() =
 
             // check reference node properties
             Assert.IsNotNull comReference
-            Assert.IsInstanceOf(typeof<ComReferenceNode>, comReference)
+            Assert.IsTrue(comReference :? ComReferenceNode)
             let comRef = comReference :?> ComReferenceNode
             Assert.AreEqual(1, comRef.MajorVersionNumber)
             Assert.AreEqual(0, comRef.MinorVersionNumber)
             Assert.AreEqual(guid, comRef.TypeGuid)
             Assert.AreEqual("Microsoft Shell Controls And Automation", comRef.Caption)
             let sysDirectory = Environment.GetFolderPath(Environment.SpecialFolder.SystemX86)
-            StringAssert.AreEqualIgnoringCase(Path.Combine(sysDirectory, "shell32.dll"), comRef.InstalledFilePath)
+            Assert.IsTrue(String.Compare(Path.Combine(sysDirectory, "shell32.dll"), comRef.InstalledFilePath, StringComparison.OrdinalIgnoreCase) = 0)
 
             // check node exists under references
             let l = new List<ComReferenceNode>()

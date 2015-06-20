@@ -813,6 +813,7 @@ See also ...\SetupAuthoring\FSharp\Registry\FSProjSys_Registration.wxs, e.g.
                             if (AssemblyReferenceNode.IsFSharpCoreReference asmNode) then
                                 asmNode.RebindFSharpCoreAfterUpdatingVersion(buildResult)
 
+                        this.UpdateTargetFramework(this.InteropSafeIVsHierarchy, this.GetTargetFrameworkMoniker(), this.GetTargetFrameworkMoniker()) |> ignore
                         this.ComputeSourcesAndFlags()
             
             override this.SendReferencesToFSI(references) = 
@@ -1843,9 +1844,9 @@ See also ...\SetupAuthoring\FSharp\Registry\FSProjSys_Registration.wxs, e.g.
                               let (_, res) = mtservice.GetInstallableFrameworkForTargetFx(targetFrameworkMoniker)
                               res
 
-                (frameworkName, runtime, if String.IsNullOrEmpty(sku) then null else sku)
+                (runtime, if String.IsNullOrEmpty(sku) then null else sku)
 
-            member internal x.DoFixupAppConfigOnTargetFXChange(frameworkName : System.Runtime.Versioning.FrameworkName, runtime : string, sku : string) =
+            member internal x.DoFixupAppConfigOnTargetFXChange(runtime : string, sku : string, targetFSharpCoreVersion : string, autoGenerateBindingRedirects : bool ) =
                 let mutable res = VSConstants.E_FAIL
                 let specialFiles = x :> IVsProjectSpecialFiles
                 // We only want to force-generate an AppConfig file if the output type is EXE;
@@ -1865,12 +1866,11 @@ See also ...\SetupAuthoring\FSharp\Registry\FSProjSys_Registration.wxs, e.g.
                         res <- langConfigFile.Open(x)
                         if ErrorHandler.Succeeded(res) then
                             langConfigFile.EnsureSupportedRuntimeElement(runtime, sku)
-                            if langConfigFile.IsDirty() then
-                                let node = x.NodeFromItemId(itemid)
-                                System.Diagnostics.Debug.Assert(node <> null, "No project node for the item?")
-                                if node <> null then
-                                    langConfigFile.EnsureHasBindingRedirects(frameworkName.Version.Major)
-                                    res <- langConfigFile.Save()
+                            let node = x.NodeFromItemId(itemid)
+                            System.Diagnostics.Debug.Assert(node <> null, "No project node for the item?")
+                            if node <> null then
+                                langConfigFile.EnsureHasBindingRedirects(targetFSharpCoreVersion, autoGenerateBindingRedirects)
+                                res <- langConfigFile.Save()
 
                         // if we couldn't find the file, but we don't need it, then just ignore
                         if projProp.OutputType = OutputType.Library && res = NativeMethods.STG_E_FILENOTFOUND then
@@ -1879,14 +1879,9 @@ See also ...\SetupAuthoring\FSharp\Registry\FSProjSys_Registration.wxs, e.g.
                         (langConfigFile :> IDisposable).Dispose()
                 res
 
-            override x.FixupAppConfigOnTargetFXChange(targetFrameworkMoniker) =
-                let frameworkName = new System.Runtime.Versioning.FrameworkName(targetFrameworkMoniker)
-                // Spec says to do this only if the framework family is ".NETFramework"
-                if String.Compare(frameworkName.Identifier, ".NETFramework", true, CultureInfo.InvariantCulture) = 0 then
-                    let (frameworkName, runtime, sku) = x.DetermineRuntimeAndSKU(targetFrameworkMoniker)
-                    x.DoFixupAppConfigOnTargetFXChange(frameworkName, runtime, sku)
-                else
-                    VSConstants.S_OK
+            override x.FixupAppConfigOnTargetFXChange(targetFrameworkMoniker, targetFSharpCoreVersion, autoGenerateBindingRedirects) =
+                let (runtime, sku) = x.DetermineRuntimeAndSKU(targetFrameworkMoniker)
+                x.DoFixupAppConfigOnTargetFXChange(runtime, sku, targetFSharpCoreVersion, autoGenerateBindingRedirects)
 
             override x.SetHostObject(targetName, taskName, hostObject) =
 #if DEBUG
@@ -2142,7 +2137,7 @@ See also ...\SetupAuthoring\FSharp\Registry\FSProjSys_Registration.wxs, e.g.
                 if GetCaption(pHierProj) = GetCaption(projNode.InteropSafeIVsHierarchy) then
                     // This code matches what ProjectNode.SetConfiguration would do; that method cannot be called during a build, but at this
                     // current moment in time, it is 'safe' to do this update.
-                    let _,currentConfigName = Utilities.TryGetActiveConfigurationAndPlatform(projNode.Site, projNode.InteropSafeIVsHierarchy)
+                    let _,currentConfigName = Utilities.TryGetActiveConfigurationAndPlatform(projNode.Site, projNode.ProjectIDGuid)
                     MSBuildProject.SetGlobalProperty(projNode.BuildProject, ProjectFileConstants.Configuration, currentConfigName.ConfigName)
                     MSBuildProject.SetGlobalProperty(projNode.BuildProject, ProjectFileConstants.Platform, currentConfigName.MSBuildPlatform)
                     projNode.UpdateMSBuildState()
@@ -2482,6 +2477,18 @@ See also ...\SetupAuthoring\FSharp\Registry\FSProjSys_Registration.wxs, e.g.
             with get() = (x.Node :?> FSharpFileNode).SubType
             and set(value) = (x.Node :?> FSharpFileNode).SubType <- value
 
+        override x.CreateDesignPropertyDescriptor propertyDescriptor =
+            let isLinkFile = 
+                match x.Node with
+                | :? FSharpFileNode as f -> f.IsLinkFile
+                | _ -> false
+
+            let fileNameEditable = not isLinkFile
+
+            if (not(fileNameEditable) && (propertyDescriptor.Name = "FileName"))
+            then Microsoft.VisualStudio.Editors.PropertyPages.FilteredObjectWrapper.ReadOnlyPropertyDescriptorWrapper(propertyDescriptor) :> PropertyDescriptor
+            else base.CreateDesignPropertyDescriptor(propertyDescriptor)
+
 
     and (* type *)
      
@@ -2668,7 +2675,7 @@ See also ...\SetupAuthoring\FSharp\Registry\FSProjSys_Registration.wxs, e.g.
                     nodeBeforeMe.NextSibling <- lastNode
                     lastNode.NextSibling <- thisNode
                 
-                root.OnItemAdded(root, lastNode)
+                root.OnItemAdded(lastNode.Parent, lastNode)
                 lastNode :?> FSharpFileNode
 
             /// In solution explorer, move the last of my siblings to just below me, return the moved FSharpFileNode
@@ -2687,7 +2694,7 @@ See also ...\SetupAuthoring\FSharp\Registry\FSProjSys_Registration.wxs, e.g.
                 let tmp = target.NextSibling 
                 target.NextSibling <- lastNode
                 lastNode.NextSibling <- tmp
-                root.OnItemAdded(root, lastNode)
+                root.OnItemAdded(lastNode.Parent, lastNode)
                 lastNode :?> FSharpFileNode
 
             override x.ExecCommandOnNode(guidCmdGroup:Guid, cmd:uint32, nCmdexecopt:uint32, pvaIn:IntPtr, pvaOut:IntPtr ) =
