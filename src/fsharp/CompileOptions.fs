@@ -1033,19 +1033,38 @@ let PrintWholeAssemblyImplementation (tcConfig:TcConfig) outfile header expr =
             dprintf "\n------------------\n";
 
 //----------------------------------------------------------------------------
-// ReportTime 
+// ReportTime
+// NOTE: This code is partially duplicated in absil\ilwrite.fs.
 //----------------------------------------------------------------------------
 
-let tPrev = ref None
-let nPrev = ref None
+//
+type private TimingData = {
+    /// The actual (wall) time when this data was recorded.
+    /// This value is always specified with DateTimeKind.Utc.
+    WallTime : DateTime;
+    /// The process user time (total) when this data was recorded.
+    UserTime : TimeSpan;
+    /// The total number of garbage collections, by generation,
+    /// in this process' lifetime when this data was recorded.
+    GcCounts : int[];
+    /// The description for this data point.
+    Description : string;
+}
+
+/// The TimingData from the start of the previous compiler phase.
+let private prevData = ref None
+
+/// The current process and it's UTC start time.
+/// Used by ReportTime, but not initialized unless times are actually being reported.
+let private currentProcess = ref None
+
 let ReportTime (tcConfig:TcConfig) descr =
-    
-    match !nPrev with
+    match !prevData with
     | None -> ()
-    | Some prevDescr ->
-        if tcConfig.pause then 
-            dprintf "[done '%s', entering '%s'] press <enter> to continue... " prevDescr descr;
-            System.Console.ReadLine() |> ignore;
+    | Some prevData ->
+        if tcConfig.pause then
+            dprintf "[done '%s', entering '%s'] press <enter> to continue... " prevData.Description descr
+            System.Console.ReadLine() |> ignore
         // Intentionally putting this right after the pause so a debugger can be attached.
         match tcConfig.simulateException with
         | Some("fsc-oom") -> raise(System.OutOfMemoryException())
@@ -1069,32 +1088,55 @@ let ReportTime (tcConfig:TcConfig) descr =
         | Some("fsc-fail") -> failwith "simulated"
         | _ -> ()
 
+    // Note that timing calls are relatively expensive on the startup path so we don't
+    // make this call unless showTimes has been turned on.
+    if tcConfig.showTimes || verbose then
+        /// The current process. This is cached to avoid fetching it repeatedly.
+        let proc, procStartUtc =
+            match !currentProcess with
+            | Some x -> x
+            | None ->
+                let proc = System.Diagnostics.Process.GetCurrentProcess()
+                let procStartUtc = proc.StartTime.ToUniversalTime()
+                currentProcess := Some (proc, procStartUtc)
+                proc, procStartUtc
 
-
-
-    if (tcConfig.showTimes || verbose) then 
-        // Note that timing calls are relatively expensive on the startup path so we don't
-        // make this call unless showTimes has been turned on.
-        let timeNow = System.Diagnostics.Process.GetCurrentProcess().UserProcessorTime.TotalSeconds
+        let wallTimeNow = System.DateTime.UtcNow
+        let userTimeNow = proc.UserProcessorTime
         let maxGen = System.GC.MaxGeneration
         let gcNow = [| for i in 0 .. maxGen -> System.GC.CollectionCount(i) |]
-        let ptime = System.Diagnostics.Process.GetCurrentProcess()
-        let wsNow = ptime.WorkingSet64/1000000L
 
-        match !tPrev, !nPrev with
-        | Some (timePrev,gcPrev:int []),Some prevDescr ->
-            let spanGC = [| for i in 0 .. maxGen -> System.GC.CollectionCount(i) - gcPrev.[i] |]
-            dprintf "TIME: %4.1f Delta: %4.1f Mem: %3d" 
-                timeNow (timeNow - timePrev) 
-                wsNow;
-            dprintf " G0: %3d G1: %2d G2: %2d [%s]\n" 
+        // Refresh the Process instance's cached info to get
+        // the correct value for the working set size.
+        proc.Refresh ()
+        let wsNow = proc.WorkingSet64 / 1000000L
+
+        match !prevData with
+        | None -> ()
+        | Some prevData ->
+            let spanGC =
+                let gcPrev = prevData.GcCounts
+                [| for i in 0 .. maxGen -> gcNow.[i] - gcPrev.[i] |]
+            dprintf "TIME: %4.1f Delta: %4.1f User: %4.1f Delta: %4.1f Mem: %3d"
+                (wallTimeNow - procStartUtc).TotalSeconds (wallTimeNow - prevData.WallTime).TotalSeconds
+                userTimeNow.TotalSeconds (userTimeNow - prevData.UserTime).TotalSeconds
+                wsNow
+            dprintf " G0: %3d G1: %2d G2: %2d [%s]\n"
                 spanGC.[Operators.min 0 maxGen] spanGC.[Operators.min 1 maxGen] spanGC.[Operators.min 2 maxGen]
-                prevDescr
+                prevData.Description
 
-        | _ -> ()
-        tPrev := Some (timeNow,gcNow)
-
-    nPrev := Some descr
+        prevData := Some {
+            WallTime = wallTimeNow;
+            UserTime = userTimeNow;
+            GcCounts = gcNow;
+            Description = descr; }
+    else
+        // Only record the description.
+        prevData := Some {
+            WallTime = System.DateTime (0L, System.DateTimeKind.Utc);
+            UserTime = System.TimeSpan.Zero;
+            GcCounts = Array.empty;
+            Description = descr; }
 
 #if NO_COMPILER_BACKEND
 #else  

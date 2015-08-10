@@ -28,11 +28,20 @@ let showEntryLookups = false
 //---------------------------------------------------------------------
 
 let reportTime =
-    let tFirst = ref None     
-    let tPrev = ref None     
+    let tFirst = ref None
+    let tPrev = ref None
+    let currentProc = ref None
     fun showTimes descr ->
-        if showTimes then 
-            let t = System.Diagnostics.Process.GetCurrentProcess().UserProcessorTime.TotalSeconds
+        if showTimes then
+            let proc =
+                match !currentProc with
+                | Some p -> p
+                | None ->
+                    let proc = System.Diagnostics.Process.GetCurrentProcess()
+                    currentProc := Some proc
+                    proc
+
+            let t = proc.UserProcessorTime.TotalSeconds
             let prev = match !tPrev with None -> 0.0 | Some t -> t
             let first = match !tFirst with None -> (tFirst := Some t; t) | Some t -> t
             dprintf "ilwrite: TIME %10.3f (total)   %10.3f (delta) - %s\n" (t - first) (t - prev) descr
