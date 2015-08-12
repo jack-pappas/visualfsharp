@@ -279,6 +279,7 @@ module Zmap =
 
 module Zset =
     let ofList order xs = Zset.addList   xs (Zset.empty order)
+    let ofSeq order xs = Zset.addSeq xs (Zset.empty order)
 
     // CLEANUP NOTE: move to Zset?
     let rec fixpoint f (s as s0) =

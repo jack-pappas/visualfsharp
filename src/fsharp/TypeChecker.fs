@@ -1545,7 +1545,10 @@ let ChooseCanonicalValSchemeAfterInference g denv valscheme m =
     valscheme
 
 let PlaceTyparsInDeclarationOrder declaredTypars generalizedTypars  =
-    declaredTypars @ (generalizedTypars |> List.filter (fun tp -> not (ListSet.contains typarEq tp declaredTypars)))
+    Seq.append
+        declaredTypars
+        (generalizedTypars |> Seq.filter (fun tp -> not (ListSet.contains typarEq tp declaredTypars)))
+    |> Seq.toList
 
 let SetTyparRigid _g denv m (tp:Typar) = 
     match tp.Solution with 
@@ -1573,7 +1576,7 @@ let GeneralizeVal cenv denv enclosingDeclaredTypars generalizedTyparsForThisBind
     // of the r.h.s. , e.g. let x,y = None,[] 
     let computeRelevantTypars thruFlag = 
         let ftps = (freeInTypeLeftToRight cenv.g thruFlag ty)
-        let generalizedTypars = generalizedTyparsForThisBinding |> List.filter (fun tp -> ListSet.contains typarEq tp ftps)
+        let generalizedTypars = generalizedTyparsForThisBinding |> Seq.filter (fun tp -> ListSet.contains typarEq tp ftps)
         // Put declared typars first 
         let generalizedTypars = PlaceTyparsInDeclarationOrder allDeclaredTypars generalizedTypars  
         generalizedTypars
@@ -5873,17 +5876,19 @@ and TcRecordConstruction cenv overallTy env tpenv optOrigExpr objTy fldsList m =
     // Add rebindings for unbound field when an "old value" is available 
     let oldFldsList = 
         match optOrigExpr with
-        | None -> []
+        | None -> Seq.empty
         | Some (_,_,oldve') -> 
                // When we have an "old" value, append bindings for the unbound fields. 
                // Effect order - mutable fields may get modified by other bindings... 
                let fieldNameUnbound nom = List.forall (fun (name,_) -> name <> nom) fldsList
                fspecs 
-               |> List.filter (fun rfld -> rfld.Name |> fieldNameUnbound)
-               |> List.filter (fun f -> not f.IsZeroInit)
-               |> List.map (fun fspec ->fspec.Name, mkRecdFieldGet cenv.g (oldve',tcref.MakeNestedRecdFieldRef fspec,tinst,m))
+               |> Seq.filter (fun rfld -> rfld.Name |> fieldNameUnbound)
+               |> Seq.filter (fun f -> not f.IsZeroInit)
+               |> Seq.map (fun fspec ->fspec.Name, mkRecdFieldGet cenv.g (oldve',tcref.MakeNestedRecdFieldRef fspec,tinst,m))
 
-    let fldsList = fldsList @ oldFldsList
+    let fldsList =
+        Seq.append fldsList oldFldsList
+        |> Seq.toList
 
     // From now on only interested in fspecs that truly need values. 
     let fspecs = fspecs |> List.filter (fun f -> not f.IsZeroInit)
@@ -5954,7 +5959,7 @@ and GetNameAndArityOfObjExprBinding _cenv _env b =
                 let infosForExplicitArgs = pushedPats |> List.map SynInfo.InferSynArgInfoFromSimplePats
                 let infosForExplicitArgs = SynInfo.AdjustMemberArgs MemberKind.Member infosForExplicitArgs
                 let infosForExplicitArgs = SynInfo.AdjustArgsForUnitElimination infosForExplicitArgs 
-                let argInfos = [SynInfo.selfMetadata] @ infosForExplicitArgs
+                let argInfos = SynInfo.selfMetadata :: infosForExplicitArgs
                 let retInfo = SynInfo.unnamedRetVal //SynInfo.InferSynReturnData pushedRetInfoOpt
                 let valSynData = SynValInfo(argInfos,retInfo)
                 (id.idText,valSynData)
@@ -7270,7 +7275,7 @@ and TcComputationExpression cenv env overallTy mWhole interpExpr builderTy tpenv
                                     mkSynCall methInfo.DisplayName mClause (dataCompPrior :: args)
                                 else 
                                     errorR(Error(FSComp.SR.tcCustomOperationHasIncorrectArgCount(nm.idText,expectedArgCount,args.Length),nm.idRange))
-                                    mkSynCall methInfo.DisplayName mClause ([ dataCompPrior ] @ List.init expectedArgCount (fun i -> arbExpr("_arg" + string i, mClause))) 
+                                    mkSynCall methInfo.DisplayName mClause (dataCompPrior :: (List.init expectedArgCount (fun i -> arbExpr("_arg" + string i, mClause))))
                             | _ -> failwith "unreachable"
 
                         match optionalCont with 
