@@ -3538,694 +3538,697 @@ let writeDirectory os dict =
     writeInt32 os (if dict.size = 0x0 then 0x0 else dict.addr);
     writeInt32 os dict.size
 
-let writeBytes (os: BinaryWriter) (chunk:byte[]) = os.Write(chunk,0,chunk.Length)  
+let writeBytes (os: BinaryWriter) (chunk:byte[]) = os.Write(chunk,0,chunk.Length)
 
-let writeBinaryAndReportMappings (outfile, ilg, pdbfile: string option, signer: ILStrongNameSigner option, portablePDB, 
-                                  fixupOverlappingSequencePoints, emitTailcalls, showTimes, dumpDebugInfo) modul noDebugData =
-    // Store the public key from the signer into the manifest.  This means it will be written 
-    // to the binary and also acts as an indicator to leave space for delay sign 
 
-    reportTime showTimes "Write Started";
-    let isDll = modul.IsDLL
-    
-    let signer = 
-        match signer,modul.Manifest with
-        | Some _, _ -> signer
-        | _, None -> signer
-        | None, Some {PublicKey=Some pubkey} -> 
-            (dprintn "Note: The output assembly will be delay-signed using the original public";
-             dprintn "Note: key. In order to load it you will need to either sign it with";
-             dprintn "Note: the original private key or to turn off strong-name verification";
-             dprintn "Note: (use sn.exe from the .NET Framework SDK to do this, e.g. 'sn -Vr *').";
-             dprintn "Note: Alternatively if this tool supports it you can provide the original";
-             dprintn "Note: private key when converting the assembly, assuming you have access to";
-             dprintn "Note: it.";
-             Some (ILStrongNameSigner.OpenPublicKey pubkey))
-        | _ -> signer
-
-    let modul = 
-        let pubkey =
-          match signer with 
-          | None -> None
-          | Some s -> 
-             try Some s.PublicKey  
-             with e ->     
-               failwith ("A call to StrongNameGetPublicKey failed ("+e.Message+")"); 
-               None
-        begin match modul.Manifest with 
+module WriteBinaryAndReportMappings =
+    let private write p (os: BinaryWriter) chunkName chunk = 
+        match p with 
         | None -> () 
-        | Some m -> 
-           if m.PublicKey <> None && m.PublicKey <> pubkey then 
-             dprintn "Warning: The output assembly is being signed or delay-signed with a strong name that is different to the original."
-        end;
-        { modul with Manifest = match modul.Manifest with None -> None | Some m -> Some {m with PublicKey = pubkey} }
+        | Some pExpected -> 
+            os.Flush(); 
+            let pCurrent =  int32 os.BaseStream.Position
+            if pCurrent <> pExpected then 
+                failwith ("warning: "+chunkName+" not where expected, pCurrent = "+string pCurrent+", p.addr = "+string pExpected) 
+        writeBytes os chunk 
+          
+    let private writePadding (os: BinaryWriter) _comment sz =
+        if sz < 0 then failwith "writePadding: size < 0";
+        for i = 0 to sz - 1 do 
+            os.Write 0uy
 
-    let os = 
-        try
-            // Ensure the output directory exists otherwise it will fail
-            let dir = Path.GetDirectoryName(outfile)
-            if not (Directory.Exists(dir)) then Directory.CreateDirectory(dir) |>ignore
-            new BinaryWriter(FileSystem.FileStreamCreateShim(outfile))
-        with e -> 
-            failwith ("Could not open file for writing (binary mode): " + outfile)    
-
-    let pdbData,debugDirectoryChunk,debugDataChunk,textV2P,mappings =
-        try 
-
-          let imageBaseReal = modul.ImageBase // FIXED CHOICE
-          let alignVirt = modul.VirtualAlignment // FIXED CHOICE
-          let alignPhys = modul.PhysicalAlignment // FIXED CHOICE
-          
-          let isItanium = modul.Platform = Some(IA64)
-          
-          let numSections = 3 // .text, .sdata, .reloc 
-
-
-          // HEADERS 
-          let next = 0x0
-          let headerSectionPhysLoc = 0x0
-          let headerAddr = next
-          let next = headerAddr
-          
-          let msdosHeaderSize = 0x80
-          let msdosHeaderChunk,next = chunk msdosHeaderSize next
-          
-          let peSignatureSize = 0x04
-          let peSignatureChunk,next = chunk peSignatureSize next
-          
-          let peFileHeaderSize = 0x14
-          let peFileHeaderChunk,next = chunk peFileHeaderSize next
-          
-          let peOptionalHeaderSize = if modul.Is64Bit then 0xf0 else 0xe0
-          let peOptionalHeaderChunk,next = chunk peOptionalHeaderSize next
-          
-          let textSectionHeaderSize = 0x28
-          let textSectionHeaderChunk,next = chunk textSectionHeaderSize next
-          
-          let dataSectionHeaderSize = 0x28
-          let dataSectionHeaderChunk,next = chunk dataSectionHeaderSize next
-          
-          let relocSectionHeaderSize = 0x28
-          let relocSectionHeaderChunk,next = chunk relocSectionHeaderSize next
-          
-          let headerSize = next - headerAddr
-          let nextPhys = align alignPhys (headerSectionPhysLoc + headerSize)
-          let headerSectionPhysSize = nextPhys - headerSectionPhysLoc
-          let next = align alignVirt (headerAddr + headerSize)
-          
-          // TEXT SECTION:  8 bytes IAT table 72 bytes CLI header 
-
-          let textSectionPhysLoc = nextPhys
-          let textSectionAddr = next
-          let next = textSectionAddr
-          
-          let importAddrTableChunk,next = chunk 0x08 next
-          let cliHeaderPadding = (if isItanium then (align 16 next) else next) - next
-          let next = next + cliHeaderPadding
-          let cliHeaderChunk,next = chunk 0x48 next
-          
-          let desiredMetadataVersion = 
-            if modul.MetadataVersion <> "" then
-                parseILVersion modul.MetadataVersion
-            else
-                match ilg.traits.ScopeRef with 
-                | ILScopeRef.Local -> failwith "Expected mscorlib to be ILScopeRef.Assembly was ILScopeRef.Local" 
-                | ILScopeRef.Module(_) -> failwith "Expected mscorlib to be ILScopeRef.Assembly was ILScopeRef.Module"
-                | ILScopeRef.Assembly(aref) ->
-                    match aref.Version with
-                    | Some (2us,_,_,_) -> parseILVersion "2.0.50727.0"
-                    | Some v -> v
-                    | None -> failwith "Expected msorlib to have a version number"
-
-          let entryPointToken,code,codePadding,metadata,data,resources,requiredDataFixups,pdbData,mappings = 
-            writeILMetadataAndCode ((pdbfile <> None), desiredMetadataVersion, ilg,emitTailcalls,showTimes) modul noDebugData next
-
-          reportTime showTimes "Generated IL and metadata";
-          let _codeChunk,next = chunk code.Length next
-          let _codePaddingChunk,next = chunk codePadding.Length next
-          
-          let metadataChunk,next = chunk metadata.Length next
-          
-          let strongnameChunk,next = 
-            match signer with 
-            | None -> nochunk next
-            | Some s -> chunk s.SignatureSize next
-
-          let resourcesChunk,next = chunk resources.Length next
-         
-          let rawdataChunk,next = chunk data.Length next
-
-          let vtfixupsChunk,next = nochunk next   // Note: only needed for mixed mode assemblies
-          let importTableChunkPrePadding = (if isItanium then (align 16 next) else next) - next
-          let next = next + importTableChunkPrePadding
-          let importTableChunk,next = chunk 0x28 next
-          let importLookupTableChunk,next = chunk 0x14 next
-          let importNameHintTableChunk,next = chunk 0x0e next
-          let mscoreeStringChunk,next = chunk 0x0c next
-          
-          let next = align 0x10 (next + 0x05) - 0x05
-          let importTableChunk = { addr=importTableChunk.addr; size = next - importTableChunk.addr}
-          let importTableChunkPadding = importTableChunk.size - (0x28 + 0x14 + 0x0e + 0x0c)
-          
-          let next = next + 0x03
-          let entrypointCodeChunk,next = chunk 0x06 next
-          let globalpointerCodeChunk,next = chunk (if isItanium then 0x8 else 0x0) next
-          
-          let debugDirectoryChunk,next = chunk (if pdbfile = None then 0x0 else sizeof_IMAGE_DEBUG_DIRECTORY) next
-          // The debug data is given to us by the PDB writer and appears to 
-          // typically be the type of the data plus the PDB file name.  We fill 
-          // this in after we've written the binary. We approximate the size according 
-          // to what PDB writers seem to require and leave extra space just in case... 
-          let debugDataJustInCase = 40
-          let debugDataChunk,next = 
-              chunk (align 0x4 (match pdbfile with 
-                                | None -> 0x0 
-                                | Some f -> (24 
-                                            + System.Text.Encoding.Unicode.GetByteCount(f) // See bug 748444
-                                            + debugDataJustInCase))) next
-
-
-          let textSectionSize = next - textSectionAddr
-          let nextPhys = align alignPhys (textSectionPhysLoc + textSectionSize)
-          let textSectionPhysSize = nextPhys - textSectionPhysLoc
-          let next = align alignVirt (textSectionAddr + textSectionSize)
-          
-          // .RSRC SECTION (DATA) 
-          let dataSectionPhysLoc =  nextPhys
-          let dataSectionAddr = next
-          let dataSectionVirtToPhys v = v - dataSectionAddr + dataSectionPhysLoc
-          
-          let resourceFormat = if modul.Is64Bit then Support.X64 else Support.X86
-          
-          let nativeResources = 
-            match modul.NativeResources with
-            | [] -> [||]
-            | resources ->
-#if ENABLE_MONO_SUPPORT
-                if runningOnMono then
-                  [||]
-                else
-#endif
-#if FX_NO_LINKEDRESOURCES
-                  ignore resources
-                  ignore resourceFormat
-                  [||]
-#else
-                  let unlinkedResources = List.map Lazy.force resources
-                  begin
-                    try linkNativeResources unlinkedResources next resourceFormat (Path.GetDirectoryName(outfile))
-                    with e -> failwith ("Linking a native resource failed: "+e.Message+"")
-                  end
-#endif
-          let nativeResourcesSize = nativeResources.Length
-
-          let nativeResourcesChunk,next = chunk nativeResourcesSize next
-        
-          let dummydatap,next = chunk (if next = dataSectionAddr then 0x01 else 0x0) next
-          
-          let dataSectionSize = next - dataSectionAddr
-          let nextPhys = align alignPhys (dataSectionPhysLoc + dataSectionSize)
-          let dataSectionPhysSize = nextPhys - dataSectionPhysLoc
-          let next = align alignVirt (dataSectionAddr + dataSectionSize)
-          
-          // .RELOC SECTION  base reloc table: 0x0c size 
-          let relocSectionPhysLoc =  nextPhys
-          let relocSectionAddr = next
-          let baseRelocTableChunk,next = chunk 0x0c next
-
-          let relocSectionSize = next - relocSectionAddr
-          let nextPhys = align alignPhys (relocSectionPhysLoc + relocSectionSize)
-          let relocSectionPhysSize = nextPhys - relocSectionPhysLoc
-          let next = align alignVirt (relocSectionAddr + relocSectionSize)
-
-         // Now we know where the data section lies we can fix up the  
-         // references into the data section from the metadata tables. 
-          begin 
-            requiredDataFixups |> List.iter
-              (fun (metadataOffset32,(dataOffset,kind)) -> 
-                let metadataOffset =  metadataOffset32
-                if metadataOffset < 0 || metadataOffset >= metadata.Length - 4  then failwith "data RVA fixup: fixup located outside metadata";
-                checkFixup32 metadata metadataOffset 0xdeaddddd;
-                let dataRva = 
-                  if kind then
-                      let res = dataOffset
-                      if res >= resourcesChunk.size then dprintn ("resource offset bigger than resource data section");
-                      res
-                  else 
-                      let res = rawdataChunk.addr + dataOffset
-                      if res < rawdataChunk.addr then dprintn ("data rva before data section");
-                      if res >= rawdataChunk.addr + rawdataChunk.size then dprintn ("data rva after end of data section, dataRva = "+string res+", rawdataChunk.addr = "+string rawdataChunk.addr+", rawdataChunk.size = "+string rawdataChunk.size);
-                      res
-                applyFixup32 metadata metadataOffset dataRva);
-          end;
-          
-         // IMAGE TOTAL SIZE 
-          let imageEndSectionPhysLoc =  nextPhys
-          let imageEndAddr = next
-
-          reportTime showTimes "Layout image";
-
-          let write p (os: BinaryWriter) chunkName chunk = 
-              match p with 
-              | None -> () 
-              | Some pExpected -> 
-                  os.Flush(); 
-                  let pCurrent =  int32 os.BaseStream.Position
-                  if pCurrent <> pExpected then 
-                    failwith ("warning: "+chunkName+" not where expected, pCurrent = "+string pCurrent+", p.addr = "+string pExpected) 
-              writeBytes os chunk 
-          
-          let writePadding (os: BinaryWriter) _comment sz =
-              if sz < 0 then failwith "writePadding: size < 0";
-              for i = 0 to sz - 1 do 
-                  os.Write 0uy
-          
-          // Now we've computed all the offsets, write the image 
-          
-          write (Some msdosHeaderChunk.addr) os "msdos header" msdosHeader;
-          
-          write (Some peSignatureChunk.addr) os "pe signature" [| |];
-          
-          writeInt32 os 0x4550;
-          
-          write (Some peFileHeaderChunk.addr) os "pe file header" [| |];
-          
-          if (modul.Platform = Some(AMD64)) then
-            writeInt32AsUInt16 os 0x8664 // Machine - IMAGE_FILE_MACHINE_AMD64 
-          elif isItanium then
-            writeInt32AsUInt16 os 0x200
-          else
-            writeInt32AsUInt16 os 0x014c; // Machine - IMAGE_FILE_MACHINE_I386 
-            
-          writeInt32AsUInt16 os numSections; 
-          writeInt32 os timestamp; // date since 1970 
-          writeInt32 os 0x00; // Pointer to Symbol Table Always 0 
-       // 00000090 
-          writeInt32 os 0x00; // Number of Symbols Always 0 
-          writeInt32AsUInt16 os peOptionalHeaderSize; // Size of the optional header, the format is described below. 
-          
-          // 64bit: IMAGE_FILE_32BIT_MACHINE ||| IMAGE_FILE_LARGE_ADDRESS_AWARE
-          // 32bit: IMAGE_FILE_32BIT_MACHINE
-          // Yes, 32BIT_MACHINE is set for AMD64...
-          let iMachineCharacteristic = match modul.Platform with | Some IA64 -> 0x20 | Some AMD64 -> 0x0120 | _ -> 0x0100
-          
-          writeInt32AsUInt16 os ((if isDll then 0x2000 else 0x0000) ||| 0x0002 ||| 0x0004 ||| 0x0008 ||| iMachineCharacteristic);
-          
-       // Now comes optional header 
-
-          let peOptionalHeaderByte = peOptionalHeaderByteByCLRVersion desiredMetadataVersion
-
-          write (Some peOptionalHeaderChunk.addr) os "pe optional header" [| |];
-          if modul.Is64Bit then
-            writeInt32AsUInt16 os 0x020B // Magic number is 0x020B for 64-bit 
-          else
-            writeInt32AsUInt16 os 0x010b; // Always 0x10B (see Section 23.1). 
-          writeInt32AsUInt16 os peOptionalHeaderByte; // ECMA spec says 6, some binaries, e.g. fscmanaged.exe say 7, Whidbey binaries say 8 
-          writeInt32 os textSectionPhysSize;          // Size of the code (text) section, or the sum of all code sections if there are multiple sections. 
-        // 000000a0 
-          writeInt32 os dataSectionPhysSize;          // Size of the initialized data section, or the sum of all such sections if there are multiple data sections. 
-          writeInt32 os 0x00;                         // Size of the uninitialized data section, or the sum of all such sections if there are multiple unitinitalized data sections. 
-          writeInt32 os entrypointCodeChunk.addr;     // RVA of entry point , needs to point to bytes 0xFF 0x25 followed by the RVA+!0x4000000 in a section marked execute/read for EXEs or 0 for DLLs e.g. 0x0000b57e 
-          writeInt32 os textSectionAddr;              // e.g. 0x0002000 
-       // 000000b0 
-          if modul.Is64Bit then
-            writeInt64 os ((int64)imageBaseReal)    // REVIEW: For 64-bit, we should use a 64-bit image base 
-          else             
-            writeInt32 os dataSectionAddr; // e.g. 0x0000c000           
-            writeInt32 os imageBaseReal; // Image Base Always 0x400000 (see Section 23.1). - QUERY : no it's not always 0x400000, e.g. 0x034f0000 
-            
-          writeInt32 os alignVirt;  //  Section Alignment Always 0x2000 (see Section 23.1). 
-          writeInt32 os alignPhys; // File Alignment Either 0x200 or 0x1000. 
-       // 000000c0  
-          writeInt32AsUInt16 os 0x04; //  OS Major Always 4 (see Section 23.1). 
-          writeInt32AsUInt16 os 0x00; // OS Minor Always 0 (see Section 23.1). 
-          writeInt32AsUInt16 os 0x00; // User Major Always 0 (see Section 23.1). 
-          writeInt32AsUInt16 os 0x00; // User Minor Always 0 (see Section 23.1). 
-          do
-            let (major, minor) = modul.SubsystemVersion
-            writeInt32AsUInt16 os major;
-            writeInt32AsUInt16 os minor;
-          writeInt32 os 0x00; // Reserved Always 0 (see Section 23.1). 
-       // 000000d0  
-          writeInt32 os imageEndAddr; // Image Size: Size, in bytes, of image, including all headers and padding; shall be a multiple of Section Alignment. e.g. 0x0000e000 
-          writeInt32 os headerSectionPhysSize; // Header Size Combined size of MS-DOS Header, PE Header, PE Optional Header and padding; shall be a multiple of the file alignment. 
-          writeInt32 os 0x00; // File Checksum Always 0 (see Section 23.1). QUERY: NOT ALWAYS ZERO 
-          writeInt32AsUInt16 os modul.SubSystemFlags; // SubSystem Subsystem required to run this image. Shall be either IMAGE_SUBSYSTEM_WINDOWS_CE_GUI (0x3) or IMAGE_SUBSYSTEM_WINDOWS_GUI (0x2). QUERY: Why is this 3 on the images ILASM produces 
-          // DLL Flags Always 0x400 (no unmanaged windows exception handling - see Section 23.1).
-          //  Itanium: see notes at end of file 
-          //  IMAGE_DLLCHARACTERISTICS_NX_COMPAT: See FSharp 1.0 bug 5019 and http://blogs.msdn.com/ed_maurer/archive/2007/12/14/nxcompat-and-the-c-compiler.aspx 
-          // Itanium : IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE | IMAGE_DLLCHARACTERISTICS_ NO_SEH | IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT
-          // x86 : IMAGE_DLLCHARACTERISTICS_ NO_SEH | IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT
-          // x64 : IMAGE_DLLCHARACTERISTICS_ NO_SEH | IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT
-          let dllCharacteristics = 
-            let flags  = 
-                if modul.Is64Bit then (if isItanium then 0x8540 else 0x540)
-                else 0x540
-            if modul.UseHighEntropyVA then flags ||| 0x20 // IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA
-            else flags
-          writeInt32AsUInt16 os dllCharacteristics
-       // 000000e0 
-          // Note that the defaults differ between x86 and x64
-          if modul.Is64Bit then
-            let size = defaultArg modul.StackReserveSize 0x400000 |> int64
-            writeInt64 os size // Stack Reserve Size Always 0x400000 (4Mb) (see Section 23.1). 
-            writeInt64 os 0x4000L // Stack Commit Size Always 0x4000 (16Kb) (see Section 23.1). 
-            writeInt64 os 0x100000L // Heap Reserve Size Always 0x100000 (1Mb) (see Section 23.1). 
-            writeInt64 os 0x2000L // Heap Commit Size Always 0x800 (8Kb) (see Section 23.1). 
-          else
-            let size = defaultArg modul.StackReserveSize 0x100000
-            writeInt32 os size // Stack Reserve Size Always 0x100000 (1Mb) (see Section 23.1). 
-            writeInt32 os 0x1000 // Stack Commit Size Always 0x1000 (4Kb) (see Section 23.1). 
-            writeInt32 os 0x100000 // Heap Reserve Size Always 0x100000 (1Mb) (see Section 23.1). 
-            writeInt32 os 0x1000 // Heap Commit Size Always 0x1000 (4Kb) (see Section 23.1).             
-       // 000000f0 - x86 location, moving on, for x64, add 0x10  
-          writeInt32 os 0x00 // Loader Flags Always 0 (see Section 23.1) 
-          writeInt32 os 0x10 // Number of Data Directories: Always 0x10 (see Section 23.1). 
-          writeInt32 os 0x00 
-          writeInt32 os 0x00 // Export Table Always 0 (see Section 23.1). 
-       // 00000100  
-          writeDirectory os importTableChunk // Import Table RVA of Import Table, (see clause 24.3.1). e.g. 0000b530  
-          // Native Resource Table: ECMA says Always 0 (see Section 23.1), but mscorlib and other files with resources bound into executable do not.  For the moment assume the resources table is always the first resource in the file. 
-          writeDirectory os nativeResourcesChunk
-
-       // 00000110  
-          writeInt32 os 0x00 // Exception Table Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // Exception Table Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // Certificate Table Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // Certificate Table Always 0 (see Section 23.1). 
-       // 00000120  
-          writeDirectory os baseRelocTableChunk 
-          writeDirectory os debugDirectoryChunk // Debug Directory 
-       // 00000130  
-          writeInt32 os 0x00 //  Copyright Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 //  Copyright Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // Global Ptr Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // Global Ptr Always 0 (see Section 23.1). 
-       // 00000140  
-          writeInt32 os 0x00 // Load Config Table Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // Load Config Table Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // TLS Table Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // TLS Table Always 0 (see Section 23.1). 
-       // 00000150   
-          writeInt32 os 0x00 // Bound Import Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // Bound Import Always 0 (see Section 23.1). 
-          writeDirectory os importAddrTableChunk // Import Addr Table, (see clause 24.3.1). e.g. 0x00002000  
-       // 00000160   
-          writeInt32 os 0x00 // Delay Import Descriptor Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // Delay Import Descriptor Always 0 (see Section 23.1). 
-          writeDirectory os cliHeaderChunk
-       // 00000170  
-          writeInt32 os 0x00 // Reserved Always 0 (see Section 23.1). 
-          writeInt32 os 0x00 // Reserved Always 0 (see Section 23.1). 
-          
-          write (Some textSectionHeaderChunk.addr) os "text section header" [| |]
-          
-       // 00000178  
-          writeBytes os  [| 0x2euy; 0x74uy; 0x65uy; 0x78uy; 0x74uy; 0x00uy; 0x00uy; 0x00uy; |] // ".text\000\000\000" 
-       // 00000180  
-          writeInt32 os textSectionSize // VirtualSize: Total size of the section when loaded into memory in bytes rounded to Section Alignment. If this value is greater than Size of Raw Data, the section is zero-padded. e.g. 0x00009584 
-          writeInt32 os textSectionAddr //  VirtualAddress For executable images this is the address of the first byte of the section, when loaded into memory, relative to the image base. e.g. 0x00020000 
-          writeInt32 os textSectionPhysSize //  SizeOfRawData Size of the initialized data on disk in bytes, shall be a multiple of FileAlignment from the PE header. If this is less than VirtualSize the remainder of the section is zero filled. Because this field is rounded while the VirtualSize field is not it is possible for this to be greater than VirtualSize as well. When a section contains only uninitialized data, this field should be 0. 0x00009600 
-          writeInt32 os textSectionPhysLoc // PointerToRawData RVA to section's first page within the PE file. This shall be a multiple of FileAlignment from the optional header. When a section contains only uninitialized data, this field should be 0. e.g. 00000200 
-       // 00000190  
-          writeInt32 os 0x00 // PointerToRelocations RVA of Relocation section. 
-          writeInt32 os 0x00 // PointerToLinenumbers Always 0 (see Section 23.1). 
-       // 00000198  
-          writeInt32AsUInt16 os 0x00// NumberOfRelocations Number of relocations, set to 0 if unused. 
-          writeInt32AsUInt16 os 0x00  //  NumberOfLinenumbers Always 0 (see Section 23.1). 
-          writeBytes os [| 0x20uy; 0x00uy; 0x00uy; 0x60uy |] //  Characteristics Flags describing section's characteristics, see below. IMAGE_SCN_CNT_CODE || IMAGE_SCN_MEM_EXECUTE || IMAGE_SCN_MEM_READ 
-          
-          write (Some dataSectionHeaderChunk.addr) os "data section header" [| |]
-          
-       // 000001a0  
-          writeBytes os [| 0x2euy; 0x72uy; 0x73uy; 0x72uy; 0x63uy; 0x00uy; 0x00uy; 0x00uy; |] // ".rsrc\000\000\000" 
-    //  writeBytes os [| 0x2e; 0x73; 0x64; 0x61; 0x74; 0x61; 0x00; 0x00; |] // ".sdata\000\000"  
-          writeInt32 os dataSectionSize // VirtualSize: Total size of the section when loaded into memory in bytes rounded to Section Alignment. If this value is greater than Size of Raw Data, the section is zero-padded. e.g. 0x0000000c 
-          writeInt32 os dataSectionAddr //  VirtualAddress For executable images this is the address of the first byte of the section, when loaded into memory, relative to the image base. e.g. 0x0000c000
-       // 000001b0  
-          writeInt32 os dataSectionPhysSize //  SizeOfRawData Size of the initialized data on disk in bytes, shall be a multiple of FileAlignment from the PE header. If this is less than VirtualSize the remainder of the section is zero filled. Because this field is rounded while the VirtualSize field is not it is possible for this to be greater than VirtualSize as well. When a section contains only uninitialized data, this field should be 0. e.g. 0x00000200 
-          writeInt32 os dataSectionPhysLoc // PointerToRawData QUERY: Why does ECMA say "RVA" here? Offset to section's first page within the PE file. This shall be a multiple of FileAlignment from the optional header. When a section contains only uninitialized data, this field should be 0. e.g. 0x00009800 
-       // 000001b8  
-          writeInt32 os 0x00 // PointerToRelocations RVA of Relocation section. 
-          writeInt32 os 0x00 // PointerToLinenumbers Always 0 (see Section 23.1). 
-       // 000001c0  
-          writeInt32AsUInt16 os 0x00 // NumberOfRelocations Number of relocations, set to 0 if unused. 
-          writeInt32AsUInt16 os 0x00  //  NumberOfLinenumbers Always 0 (see Section 23.1). 
-          writeBytes os [| 0x40uy; 0x00uy; 0x00uy; 0x40uy |] //  Characteristics Flags: IMAGE_SCN_MEM_READ |  IMAGE_SCN_CNT_INITIALIZED_DATA 
-          
-          write (Some relocSectionHeaderChunk.addr) os "reloc section header" [| |]
-       // 000001a0  
-          writeBytes os [| 0x2euy; 0x72uy; 0x65uy; 0x6cuy; 0x6fuy; 0x63uy; 0x00uy; 0x00uy; |] // ".reloc\000\000" 
-          writeInt32 os relocSectionSize // VirtualSize: Total size of the section when loaded into memory in bytes rounded to Section Alignment. If this value is greater than Size of Raw Data, the section is zero-padded. e.g. 0x0000000c 
-          writeInt32 os relocSectionAddr //  VirtualAddress For executable images this is the address of the first byte of the section, when loaded into memory, relative to the image base. e.g. 0x0000c000
-       // 000001b0  
-          writeInt32 os relocSectionPhysSize //  SizeOfRawData Size of the initialized reloc on disk in bytes, shall be a multiple of FileAlignment from the PE header. If this is less than VirtualSize the remainder of the section is zero filled. Because this field is rounded while the VirtualSize field is not it is possible for this to be greater than VirtualSize as well. When a section contains only uninitialized reloc, this field should be 0. e.g. 0x00000200 
-          writeInt32 os relocSectionPhysLoc // PointerToRawData QUERY: Why does ECMA say "RVA" here? Offset to section's first page within the PE file. This shall be a multiple of FileAlignment from the optional header. When a section contains only uninitialized reloc, this field should be 0. e.g. 0x00009800 
-       // 000001b8  
-          writeInt32 os 0x00 // PointerToRelocations RVA of Relocation section. 
-          writeInt32 os 0x00 // PointerToLinenumbers Always 0 (see Section 23.1). 
-       // 000001c0  
-          writeInt32AsUInt16 os 0x00 // NumberOfRelocations Number of relocations, set to 0 if unused. 
-          writeInt32AsUInt16 os 0x00  //  NumberOfLinenumbers Always 0 (see Section 23.1). 
-          writeBytes os [| 0x40uy; 0x00uy; 0x00uy; 0x42uy |] //  Characteristics Flags: IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ |  
-          
-          writePadding os "pad to text begin" (textSectionPhysLoc - headerSize)
-          
-          // TEXT SECTION: e.g. 0x200 
-          
-          let textV2P v = v - textSectionAddr + textSectionPhysLoc
-          
-          // e.g. 0x0200 
-          write (Some (textV2P importAddrTableChunk.addr)) os "import addr table" [| |]
-          writeInt32 os importNameHintTableChunk.addr 
-          writeInt32 os 0x00  // QUERY 4 bytes of zeros not 2 like ECMA  24.3.1 says 
-          
-          // e.g. 0x0208 
-
-          let flags = 
-            (if modul.IsILOnly then 0x01 else 0x00) ||| 
-            (if modul.Is32Bit then 0x02 else 0x00) ||| 
-            (if modul.Is32BitPreferred then 0x00020003 else 0x00) ||| 
-            (if (match signer with None -> false | Some s -> s.IsFullySigned) then 0x08 else 0x00)
-
-          let headerVersionMajor,headerVersionMinor = headerVersionSupportedByCLRVersion desiredMetadataVersion
-
-          writePadding os "pad to cli header" cliHeaderPadding 
-          write (Some (textV2P cliHeaderChunk.addr)) os "cli header"  [| |]
-          writeInt32 os 0x48 // size of header 
-          writeInt32AsUInt16 os headerVersionMajor // Major part of minimum version of CLR reqd. 
-          writeInt32AsUInt16 os headerVersionMinor // Minor part of minimum version of CLR reqd. ... 
-          // e.g. 0x0210 
-          writeDirectory os metadataChunk
-          writeInt32 os flags
-          
-          writeInt32 os entryPointToken 
-          write None os "rest of cli header" [| |]
-          
-          // e.g. 0x0220 
-          writeDirectory os resourcesChunk
-          writeDirectory os strongnameChunk
-          // e.g. 0x0230 
-          writeInt32 os 0x00 // code manager table, always 0 
-          writeInt32 os 0x00 // code manager table, always 0 
-          writeDirectory os vtfixupsChunk 
-          // e.g. 0x0240 
-          writeInt32 os 0x00  // export addr table jumps, always 0 
-          writeInt32 os 0x00  // export addr table jumps, always 0 
-          writeInt32 os 0x00  // managed native header, always 0 
-          writeInt32 os 0x00  // managed native header, always 0 
-          
-          writeBytes os code
-          write None os "code padding" codePadding
-          
-          writeBytes os metadata
-          
-          // write 0x80 bytes of empty space for encrypted SHA1 hash, written by SN.EXE or call to signing API 
-          if signer <> None then 
-            write (Some (textV2P strongnameChunk.addr)) os "strongname" (Array.create strongnameChunk.size 0x0uy)
-
-          write (Some (textV2P resourcesChunk.addr)) os "raw resources" [| |]
-          writeBytes os resources
-          write (Some (textV2P rawdataChunk.addr)) os "raw data" [| |]
-          writeBytes os data
-
-          writePadding os "start of import table" importTableChunkPrePadding
-
-          // vtfixups would go here 
-          write (Some (textV2P importTableChunk.addr)) os "import table" [| |]
-          
-          writeInt32 os importLookupTableChunk.addr
-          writeInt32 os 0x00
-          writeInt32 os 0x00
-          writeInt32 os mscoreeStringChunk.addr
-          writeInt32 os importAddrTableChunk.addr
-          writeInt32 os 0x00
-          writeInt32 os 0x00
-          writeInt32 os 0x00
-          writeInt32 os 0x00
-          writeInt32 os 0x00 
-        
-          write (Some (textV2P importLookupTableChunk.addr)) os "import lookup table" [| |]
-          writeInt32 os importNameHintTableChunk.addr 
-          writeInt32 os 0x00 
-          writeInt32 os 0x00 
-          writeInt32 os 0x00 
-          writeInt32 os 0x00 
-          
-
-          write (Some (textV2P importNameHintTableChunk.addr)) os "import name hint table" [| |]
-          // Two zero bytes of hint, then Case sensitive, null-terminated ASCII string containing name to import. 
-          // Shall _CorExeMain a .exe file _CorDllMain for a .dll file.
-          if isDll then 
-              writeBytes os [| 0x00uy;  0x00uy;  0x5fuy;  0x43uy ;  0x6fuy;  0x72uy;  0x44uy;  0x6cuy;  0x6cuy;  0x4duy;  0x61uy;  0x69uy;  0x6euy;  0x00uy |]
-          else 
-              writeBytes os [| 0x00uy;  0x00uy;  0x5fuy;  0x43uy;  0x6fuy;  0x72uy;  0x45uy;  0x78uy;  0x65uy;  0x4duy;  0x61uy;  0x69uy;  0x6euy;  0x00uy |]
-          
-          write (Some (textV2P mscoreeStringChunk.addr)) os "mscoree string"
-            [| 0x6duy;  0x73uy;  0x63uy;  0x6fuy ;  0x72uy;  0x65uy ;  0x65uy;  0x2euy ;  0x64uy;  0x6cuy ;  0x6cuy;  0x00uy ; |]
-          
-          writePadding os "end of import tab" importTableChunkPadding
-          
-          writePadding os "head of entrypoint" 0x03
-          let ep = (imageBaseReal + textSectionAddr)
-          write (Some (textV2P entrypointCodeChunk.addr)) os " entrypoint code"
-                 [| 0xFFuy; 0x25uy; (* x86 Instructions for entry *) b0 ep; b1 ep; b2 ep; b3 ep |]
-          if isItanium then 
-              write (Some (textV2P globalpointerCodeChunk.addr)) os " itanium global pointer"
-                   [| 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy |]
-          
-          if pdbfile.IsSome then 
-              write (Some (textV2P debugDirectoryChunk.addr)) os "debug directory" (Array.create sizeof_IMAGE_DEBUG_DIRECTORY 0x0uy)
-              write (Some (textV2P debugDataChunk.addr)) os "debug data" (Array.create debugDataChunk.size 0x0uy)
-          
-          writePadding os "end of .text" (dataSectionPhysLoc - textSectionPhysLoc - textSectionSize)
-          
-          // DATA SECTION 
-#if FX_NO_LINKEDRESOURCES
-#else
-          match nativeResources with
-          | [||] -> ()
-          | resources ->
-                write (Some (dataSectionVirtToPhys nativeResourcesChunk.addr)) os "raw native resources" [| |]
-                writeBytes os resources
-#endif
-
-          if dummydatap.size <> 0x0 then
-              write (Some (dataSectionVirtToPhys dummydatap.addr)) os "dummy data" [| 0x0uy |]
-
-          writePadding os "end of .rsrc" (relocSectionPhysLoc - dataSectionPhysLoc - dataSectionSize)            
-          
-          // RELOC SECTION 
-
-          // See ECMA 24.3.2 
-          let relocV2P v = v - relocSectionAddr + relocSectionPhysLoc
-          
-          let entrypointFixupAddr = entrypointCodeChunk.addr + 0x02
-          let entrypointFixupBlock = (entrypointFixupAddr / 4096) * 4096
-          let entrypointFixupOffset = entrypointFixupAddr - entrypointFixupBlock
-          let reloc = (if modul.Is64Bit then 0xA000 (* IMAGE_REL_BASED_DIR64 *) else 0x3000 (* IMAGE_REL_BASED_HIGHLOW *)) ||| entrypointFixupOffset
-          // For the itanium, you need to set a relocation entry for the global pointer
-          let reloc2 = 
-              if not isItanium then 
-                  0x0
-              else
-                  0xA000 ||| (globalpointerCodeChunk.addr - ((globalpointerCodeChunk.addr / 4096) * 4096))
-               
-          write (Some (relocV2P baseRelocTableChunk.addr)) os "base reloc table" 
-              [| b0 entrypointFixupBlock; b1 entrypointFixupBlock; b2 entrypointFixupBlock; b3 entrypointFixupBlock;
-                 0x0cuy; 0x00uy; 0x00uy; 0x00uy;
-                 b0 reloc; b1 reloc; 
-                 b0 reloc2; b1 reloc2; |]
-          writePadding os "end of .reloc" (imageEndSectionPhysLoc - relocSectionPhysLoc - relocSectionSize)
-
-          os.Dispose()
-          
-          try 
-              FileSystemUtilites.setExecutablePermission outfile
-          with _ -> 
-              ()
-          pdbData,debugDirectoryChunk,debugDataChunk,textV2P,mappings
-
-        // Looks like a finally
-        with e ->   
-            (try 
-                os.Dispose()
-                FileSystem.FileDelete outfile 
-             with _ -> ()) 
-            reraise()
-
-    reportTime showTimes "Writing Image"
-
-    if dumpDebugInfo then logDebugInfo outfile pdbData
-
-    // Now we've done the bulk of the binary, do the PDB file and fixup the binary. 
-    begin match pdbfile with
-    | None -> ()
-#if ENABLE_MONO_SUPPORT
-    | Some fmdb when runningOnMono -> 
-        writeMdbInfo fmdb outfile pdbData
-#endif
-    | Some fpdb -> 
-        try 
-            let idd = 
-#if FX_NO_PDB_WRITER
-                ignore portablePDB
-                writePortablePdbInfo fixupOverlappingSequencePoints showTimes fpdb pdbData
-#else
-                if portablePDB then 
-                    writePortablePdbInfo fixupOverlappingSequencePoints showTimes fpdb pdbData
-                else
-                    writePdbInfo fixupOverlappingSequencePoints showTimes outfile fpdb pdbData
-#endif
-            reportTime showTimes "Generate PDB Info"
-
-            // Now we have the debug data we can go back and fill in the debug directory in the image 
-            let fs2 = FileSystem.FileStreamWriteExistingShim(outfile)
-            let os2 = new BinaryWriter(fs2)
+    let private writeBinaryAndReportMappingsImpl
+        (outfile, ilg, pdbfile: string option, signer: ILStrongNameSigner option, emitTailcalls, showTimes) modul noDebugData isDll os =
             try 
-                // write the IMAGE_DEBUG_DIRECTORY 
-                os2.BaseStream.Seek (int64 (textV2P debugDirectoryChunk.addr), SeekOrigin.Begin) |> ignore
-                writeInt32 os2 idd.iddCharacteristics           // IMAGE_DEBUG_DIRECTORY.Characteristics 
-                writeInt32 os2 timestamp
-                writeInt32AsUInt16 os2 idd.iddMajorVersion
-                writeInt32AsUInt16 os2 idd.iddMinorVersion
-                writeInt32 os2 idd.iddType
-                writeInt32 os2 idd.iddData.Length               // IMAGE_DEBUG_DIRECTORY.SizeOfData 
-                writeInt32 os2 debugDataChunk.addr              // IMAGE_DEBUG_DIRECTORY.AddressOfRawData 
-                writeInt32 os2 (textV2P debugDataChunk.addr)    // IMAGE_DEBUG_DIRECTORY.PointerToRawData 
 
-                // write the debug raw data as given us by the PDB writer 
-                os2.BaseStream.Seek (int64 (textV2P debugDataChunk.addr), SeekOrigin.Begin) |> ignore
-                if debugDataChunk.size < idd.iddData.Length then failwith "Debug data area is not big enough.  Debug info may not be usable"
-                writeBytes os2 idd.iddData
-                os2.Dispose()
-            with e -> 
-                failwith ("Error while writing debug directory entry: "+e.Message)
-                (try os2.Dispose(); FileSystem.FileDelete outfile with _ -> ()) 
+              let imageBaseReal = modul.ImageBase // FIXED CHOICE
+              let alignVirt = modul.VirtualAlignment // FIXED CHOICE
+              let alignPhys = modul.PhysicalAlignment // FIXED CHOICE
+          
+              let isItanium = modul.Platform = Some(IA64)
+          
+              let numSections = 3 // .text, .sdata, .reloc 
+
+
+              // HEADERS 
+              let next = 0x0
+              let headerSectionPhysLoc = 0x0
+              let headerAddr = next
+              let next = headerAddr
+          
+              let msdosHeaderSize = 0x80
+              let msdosHeaderChunk,next = chunk msdosHeaderSize next
+          
+              let peSignatureSize = 0x04
+              let peSignatureChunk,next = chunk peSignatureSize next
+          
+              let peFileHeaderSize = 0x14
+              let peFileHeaderChunk,next = chunk peFileHeaderSize next
+          
+              let peOptionalHeaderSize = if modul.Is64Bit then 0xf0 else 0xe0
+              let peOptionalHeaderChunk,next = chunk peOptionalHeaderSize next
+          
+              let textSectionHeaderSize = 0x28
+              let textSectionHeaderChunk,next = chunk textSectionHeaderSize next
+          
+              let dataSectionHeaderSize = 0x28
+              let dataSectionHeaderChunk,next = chunk dataSectionHeaderSize next
+          
+              let relocSectionHeaderSize = 0x28
+              let relocSectionHeaderChunk,next = chunk relocSectionHeaderSize next
+          
+              let headerSize = next - headerAddr
+              let nextPhys = align alignPhys (headerSectionPhysLoc + headerSize)
+              let headerSectionPhysSize = nextPhys - headerSectionPhysLoc
+              let next = align alignVirt (headerAddr + headerSize)
+          
+              // TEXT SECTION:  8 bytes IAT table 72 bytes CLI header 
+
+              let textSectionPhysLoc = nextPhys
+              let textSectionAddr = next
+              let next = textSectionAddr
+          
+              let importAddrTableChunk,next = chunk 0x08 next
+              let cliHeaderPadding = (if isItanium then (align 16 next) else next) - next
+              let next = next + cliHeaderPadding
+              let cliHeaderChunk,next = chunk 0x48 next
+          
+              let desiredMetadataVersion = 
+                if modul.MetadataVersion <> "" then
+                    parseILVersion modul.MetadataVersion
+                else
+                    match ilg.traits.ScopeRef with 
+                    | ILScopeRef.Local -> failwith "Expected mscorlib to be ILScopeRef.Assembly was ILScopeRef.Local" 
+                    | ILScopeRef.Module(_) -> failwith "Expected mscorlib to be ILScopeRef.Assembly was ILScopeRef.Module"
+                    | ILScopeRef.Assembly(aref) ->
+                        match aref.Version with
+                        | Some (2us,_,_,_) -> parseILVersion "2.0.50727.0"
+                        | Some v -> v
+                        | None -> failwith "Expected msorlib to have a version number"
+
+              let entryPointToken,code,codePadding,metadata,data,resources,requiredDataFixups,pdbData,mappings = 
+                writeILMetadataAndCode ((pdbfile <> None), desiredMetadataVersion, ilg,emitTailcalls,showTimes) modul noDebugData next
+
+              reportTime showTimes "Generated IL and metadata";
+              let _codeChunk,next = chunk code.Length next
+              let _codePaddingChunk,next = chunk codePadding.Length next
+          
+              let metadataChunk,next = chunk metadata.Length next
+          
+              let strongnameChunk,next = 
+                match signer with 
+                | None -> nochunk next
+                | Some s -> chunk s.SignatureSize next
+
+              let resourcesChunk,next = chunk resources.Length next
+         
+              let rawdataChunk,next = chunk data.Length next
+
+              let vtfixupsChunk,next = nochunk next   // Note: only needed for mixed mode assemblies
+              let importTableChunkPrePadding = (if isItanium then (align 16 next) else next) - next
+              let next = next + importTableChunkPrePadding
+              let importTableChunk,next = chunk 0x28 next
+              let importLookupTableChunk,next = chunk 0x14 next
+              let importNameHintTableChunk,next = chunk 0x0e next
+              let mscoreeStringChunk,next = chunk 0x0c next
+          
+              let next = align 0x10 (next + 0x05) - 0x05
+              let importTableChunk = { addr=importTableChunk.addr; size = next - importTableChunk.addr}
+              let importTableChunkPadding = importTableChunk.size - (0x28 + 0x14 + 0x0e + 0x0c)
+          
+              let next = next + 0x03
+              let entrypointCodeChunk,next = chunk 0x06 next
+              let globalpointerCodeChunk,next = chunk (if isItanium then 0x8 else 0x0) next
+          
+              let debugDirectoryChunk,next = chunk (if pdbfile = None then 0x0 else sizeof_IMAGE_DEBUG_DIRECTORY) next
+              // The debug data is given to us by the PDB writer and appears to 
+              // typically be the type of the data plus the PDB file name.  We fill 
+              // this in after we've written the binary. We approximate the size according 
+              // to what PDB writers seem to require and leave extra space just in case... 
+              let debugDataJustInCase = 40
+              let debugDataChunk,next = 
+                  chunk (align 0x4 (match pdbfile with 
+                                    | None -> 0x0 
+                                    | Some f -> (24 
+                                                + System.Text.Encoding.Unicode.GetByteCount(f) // See bug 748444
+                                                + debugDataJustInCase))) next
+
+
+              let textSectionSize = next - textSectionAddr
+              let nextPhys = align alignPhys (textSectionPhysLoc + textSectionSize)
+              let textSectionPhysSize = nextPhys - textSectionPhysLoc
+              let next = align alignVirt (textSectionAddr + textSectionSize)
+          
+              // .RSRC SECTION (DATA) 
+              let dataSectionPhysLoc =  nextPhys
+              let dataSectionAddr = next
+              let dataSectionVirtToPhys v = v - dataSectionAddr + dataSectionPhysLoc
+          
+              let resourceFormat = if modul.Is64Bit then Support.X64 else Support.X86
+          
+              let nativeResources = 
+                match modul.NativeResources with
+                | [] -> [||]
+                | resources ->
+    #if ENABLE_MONO_SUPPORT
+                    if runningOnMono then
+                      [||]
+                    else
+    #endif
+    #if FX_NO_LINKEDRESOURCES
+                      ignore resources
+                      ignore resourceFormat
+                      [||]
+    #else
+                      let unlinkedResources = List.map Lazy.force resources
+                      begin
+                        try linkNativeResources unlinkedResources next resourceFormat (Path.GetDirectoryName(outfile))
+                        with e -> failwith ("Linking a native resource failed: "+e.Message+"")
+                      end
+    #endif
+              let nativeResourcesSize = nativeResources.Length
+
+              let nativeResourcesChunk,next = chunk nativeResourcesSize next
+        
+              let dummydatap,next = chunk (if next = dataSectionAddr then 0x01 else 0x0) next
+          
+              let dataSectionSize = next - dataSectionAddr
+              let nextPhys = align alignPhys (dataSectionPhysLoc + dataSectionSize)
+              let dataSectionPhysSize = nextPhys - dataSectionPhysLoc
+              let next = align alignVirt (dataSectionAddr + dataSectionSize)
+          
+              // .RELOC SECTION  base reloc table: 0x0c size 
+              let relocSectionPhysLoc =  nextPhys
+              let relocSectionAddr = next
+              let baseRelocTableChunk,next = chunk 0x0c next
+
+              let relocSectionSize = next - relocSectionAddr
+              let nextPhys = align alignPhys (relocSectionPhysLoc + relocSectionSize)
+              let relocSectionPhysSize = nextPhys - relocSectionPhysLoc
+              let next = align alignVirt (relocSectionAddr + relocSectionSize)
+
+             // Now we know where the data section lies we can fix up the  
+             // references into the data section from the metadata tables. 
+              for (metadataOffset32,(dataOffset,kind)) in requiredDataFixups do
+                    let metadataOffset =  metadataOffset32
+                    if metadataOffset < 0 || metadataOffset >= metadata.Length - 4  then failwith "data RVA fixup: fixup located outside metadata";
+                    checkFixup32 metadata metadataOffset 0xdeaddddd;
+                    let dataRva = 
+                      if kind then
+                          let res = dataOffset
+                          if res >= resourcesChunk.size then dprintn ("resource offset bigger than resource data section");
+                          res
+                      else 
+                          let res = rawdataChunk.addr + dataOffset
+                          if res < rawdataChunk.addr then dprintn ("data rva before data section");
+                          if res >= rawdataChunk.addr + rawdataChunk.size then dprintn ("data rva after end of data section, dataRva = "+string res+", rawdataChunk.addr = "+string rawdataChunk.addr+", rawdataChunk.size = "+string rawdataChunk.size);
+                          res
+                    applyFixup32 metadata metadataOffset dataRva
+          
+             // IMAGE TOTAL SIZE 
+              let imageEndSectionPhysLoc =  nextPhys
+              let imageEndAddr = next
+
+              reportTime showTimes "Layout image";
+          
+              // Now we've computed all the offsets, write the image 
+          
+              write (Some msdosHeaderChunk.addr) os "msdos header" msdosHeader;
+          
+              write (Some peSignatureChunk.addr) os "pe signature" [| |];
+          
+              writeInt32 os 0x4550;
+          
+              write (Some peFileHeaderChunk.addr) os "pe file header" [| |];
+          
+              if (modul.Platform = Some(AMD64)) then
+                writeInt32AsUInt16 os 0x8664 // Machine - IMAGE_FILE_MACHINE_AMD64 
+              elif isItanium then
+                writeInt32AsUInt16 os 0x200
+              else
+                writeInt32AsUInt16 os 0x014c; // Machine - IMAGE_FILE_MACHINE_I386 
+            
+              writeInt32AsUInt16 os numSections; 
+              writeInt32 os timestamp; // date since 1970 
+              writeInt32 os 0x00; // Pointer to Symbol Table Always 0 
+           // 00000090 
+              writeInt32 os 0x00; // Number of Symbols Always 0 
+              writeInt32AsUInt16 os peOptionalHeaderSize; // Size of the optional header, the format is described below. 
+          
+              // 64bit: IMAGE_FILE_32BIT_MACHINE ||| IMAGE_FILE_LARGE_ADDRESS_AWARE
+              // 32bit: IMAGE_FILE_32BIT_MACHINE
+              // Yes, 32BIT_MACHINE is set for AMD64...
+              let iMachineCharacteristic = match modul.Platform with | Some IA64 -> 0x20 | Some AMD64 -> 0x0120 | _ -> 0x0100
+          
+              writeInt32AsUInt16 os ((if isDll then 0x2000 else 0x0000) ||| 0x0002 ||| 0x0004 ||| 0x0008 ||| iMachineCharacteristic);
+          
+           // Now comes optional header 
+
+              let peOptionalHeaderByte = peOptionalHeaderByteByCLRVersion desiredMetadataVersion
+
+              write (Some peOptionalHeaderChunk.addr) os "pe optional header" [| |];
+              if modul.Is64Bit then
+                writeInt32AsUInt16 os 0x020B // Magic number is 0x020B for 64-bit 
+              else
+                writeInt32AsUInt16 os 0x010b; // Always 0x10B (see Section 23.1). 
+              writeInt32AsUInt16 os peOptionalHeaderByte; // ECMA spec says 6, some binaries, e.g. fscmanaged.exe say 7, Whidbey binaries say 8 
+              writeInt32 os textSectionPhysSize;          // Size of the code (text) section, or the sum of all code sections if there are multiple sections. 
+            // 000000a0 
+              writeInt32 os dataSectionPhysSize;          // Size of the initialized data section, or the sum of all such sections if there are multiple data sections. 
+              writeInt32 os 0x00;                         // Size of the uninitialized data section, or the sum of all such sections if there are multiple unitinitalized data sections. 
+              writeInt32 os entrypointCodeChunk.addr;     // RVA of entry point , needs to point to bytes 0xFF 0x25 followed by the RVA+!0x4000000 in a section marked execute/read for EXEs or 0 for DLLs e.g. 0x0000b57e 
+              writeInt32 os textSectionAddr;              // e.g. 0x0002000 
+           // 000000b0 
+              if modul.Is64Bit then
+                writeInt64 os ((int64)imageBaseReal)    // REVIEW: For 64-bit, we should use a 64-bit image base 
+              else             
+                writeInt32 os dataSectionAddr; // e.g. 0x0000c000           
+                writeInt32 os imageBaseReal; // Image Base Always 0x400000 (see Section 23.1). - QUERY : no it's not always 0x400000, e.g. 0x034f0000 
+            
+              writeInt32 os alignVirt;  //  Section Alignment Always 0x2000 (see Section 23.1). 
+              writeInt32 os alignPhys; // File Alignment Either 0x200 or 0x1000. 
+           // 000000c0  
+              writeInt32AsUInt16 os 0x04; //  OS Major Always 4 (see Section 23.1). 
+              writeInt32AsUInt16 os 0x00; // OS Minor Always 0 (see Section 23.1). 
+              writeInt32AsUInt16 os 0x00; // User Major Always 0 (see Section 23.1). 
+              writeInt32AsUInt16 os 0x00; // User Minor Always 0 (see Section 23.1). 
+              do
+                let (major, minor) = modul.SubsystemVersion
+                writeInt32AsUInt16 os major;
+                writeInt32AsUInt16 os minor;
+              writeInt32 os 0x00; // Reserved Always 0 (see Section 23.1). 
+           // 000000d0  
+              writeInt32 os imageEndAddr; // Image Size: Size, in bytes, of image, including all headers and padding; shall be a multiple of Section Alignment. e.g. 0x0000e000 
+              writeInt32 os headerSectionPhysSize; // Header Size Combined size of MS-DOS Header, PE Header, PE Optional Header and padding; shall be a multiple of the file alignment. 
+              writeInt32 os 0x00; // File Checksum Always 0 (see Section 23.1). QUERY: NOT ALWAYS ZERO 
+              writeInt32AsUInt16 os modul.SubSystemFlags; // SubSystem Subsystem required to run this image. Shall be either IMAGE_SUBSYSTEM_WINDOWS_CE_GUI (0x3) or IMAGE_SUBSYSTEM_WINDOWS_GUI (0x2). QUERY: Why is this 3 on the images ILASM produces 
+              // DLL Flags Always 0x400 (no unmanaged windows exception handling - see Section 23.1).
+              //  Itanium: see notes at end of file 
+              //  IMAGE_DLLCHARACTERISTICS_NX_COMPAT: See FSharp 1.0 bug 5019 and http://blogs.msdn.com/ed_maurer/archive/2007/12/14/nxcompat-and-the-c-compiler.aspx 
+              // Itanium : IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE | IMAGE_DLLCHARACTERISTICS_ NO_SEH | IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT
+              // x86 : IMAGE_DLLCHARACTERISTICS_ NO_SEH | IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT
+              // x64 : IMAGE_DLLCHARACTERISTICS_ NO_SEH | IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT
+              let dllCharacteristics = 
+                let flags  = 
+                    if modul.Is64Bit then (if isItanium then 0x8540 else 0x540)
+                    else 0x540
+                if modul.UseHighEntropyVA then flags ||| 0x20 // IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA
+                else flags
+              writeInt32AsUInt16 os dllCharacteristics
+           // 000000e0 
+              // Note that the defaults differ between x86 and x64
+              if modul.Is64Bit then
+                let size = defaultArg modul.StackReserveSize 0x400000 |> int64
+                writeInt64 os size // Stack Reserve Size Always 0x400000 (4Mb) (see Section 23.1). 
+                writeInt64 os 0x4000L // Stack Commit Size Always 0x4000 (16Kb) (see Section 23.1). 
+                writeInt64 os 0x100000L // Heap Reserve Size Always 0x100000 (1Mb) (see Section 23.1). 
+                writeInt64 os 0x2000L // Heap Commit Size Always 0x800 (8Kb) (see Section 23.1). 
+              else
+                let size = defaultArg modul.StackReserveSize 0x100000
+                writeInt32 os size // Stack Reserve Size Always 0x100000 (1Mb) (see Section 23.1). 
+                writeInt32 os 0x1000 // Stack Commit Size Always 0x1000 (4Kb) (see Section 23.1). 
+                writeInt32 os 0x100000 // Heap Reserve Size Always 0x100000 (1Mb) (see Section 23.1). 
+                writeInt32 os 0x1000 // Heap Commit Size Always 0x1000 (4Kb) (see Section 23.1).             
+           // 000000f0 - x86 location, moving on, for x64, add 0x10  
+              writeInt32 os 0x00 // Loader Flags Always 0 (see Section 23.1) 
+              writeInt32 os 0x10 // Number of Data Directories: Always 0x10 (see Section 23.1). 
+              writeInt32 os 0x00 
+              writeInt32 os 0x00 // Export Table Always 0 (see Section 23.1). 
+           // 00000100  
+              writeDirectory os importTableChunk // Import Table RVA of Import Table, (see clause 24.3.1). e.g. 0000b530  
+              // Native Resource Table: ECMA says Always 0 (see Section 23.1), but mscorlib and other files with resources bound into executable do not.  For the moment assume the resources table is always the first resource in the file. 
+              writeDirectory os nativeResourcesChunk
+
+           // 00000110  
+              writeInt32 os 0x00 // Exception Table Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // Exception Table Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // Certificate Table Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // Certificate Table Always 0 (see Section 23.1). 
+           // 00000120  
+              writeDirectory os baseRelocTableChunk 
+              writeDirectory os debugDirectoryChunk // Debug Directory 
+           // 00000130  
+              writeInt32 os 0x00 //  Copyright Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 //  Copyright Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // Global Ptr Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // Global Ptr Always 0 (see Section 23.1). 
+           // 00000140  
+              writeInt32 os 0x00 // Load Config Table Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // Load Config Table Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // TLS Table Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // TLS Table Always 0 (see Section 23.1). 
+           // 00000150   
+              writeInt32 os 0x00 // Bound Import Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // Bound Import Always 0 (see Section 23.1). 
+              writeDirectory os importAddrTableChunk // Import Addr Table, (see clause 24.3.1). e.g. 0x00002000  
+           // 00000160   
+              writeInt32 os 0x00 // Delay Import Descriptor Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // Delay Import Descriptor Always 0 (see Section 23.1). 
+              writeDirectory os cliHeaderChunk
+           // 00000170  
+              writeInt32 os 0x00 // Reserved Always 0 (see Section 23.1). 
+              writeInt32 os 0x00 // Reserved Always 0 (see Section 23.1). 
+          
+              write (Some textSectionHeaderChunk.addr) os "text section header" [| |]
+          
+           // 00000178  
+              writeBytes os  [| 0x2euy; 0x74uy; 0x65uy; 0x78uy; 0x74uy; 0x00uy; 0x00uy; 0x00uy; |] // ".text\000\000\000" 
+           // 00000180  
+              writeInt32 os textSectionSize // VirtualSize: Total size of the section when loaded into memory in bytes rounded to Section Alignment. If this value is greater than Size of Raw Data, the section is zero-padded. e.g. 0x00009584 
+              writeInt32 os textSectionAddr //  VirtualAddress For executable images this is the address of the first byte of the section, when loaded into memory, relative to the image base. e.g. 0x00020000 
+              writeInt32 os textSectionPhysSize //  SizeOfRawData Size of the initialized data on disk in bytes, shall be a multiple of FileAlignment from the PE header. If this is less than VirtualSize the remainder of the section is zero filled. Because this field is rounded while the VirtualSize field is not it is possible for this to be greater than VirtualSize as well. When a section contains only uninitialized data, this field should be 0. 0x00009600 
+              writeInt32 os textSectionPhysLoc // PointerToRawData RVA to section's first page within the PE file. This shall be a multiple of FileAlignment from the optional header. When a section contains only uninitialized data, this field should be 0. e.g. 00000200 
+           // 00000190  
+              writeInt32 os 0x00 // PointerToRelocations RVA of Relocation section. 
+              writeInt32 os 0x00 // PointerToLinenumbers Always 0 (see Section 23.1). 
+           // 00000198  
+              writeInt32AsUInt16 os 0x00// NumberOfRelocations Number of relocations, set to 0 if unused. 
+              writeInt32AsUInt16 os 0x00  //  NumberOfLinenumbers Always 0 (see Section 23.1). 
+              writeBytes os [| 0x20uy; 0x00uy; 0x00uy; 0x60uy |] //  Characteristics Flags describing section's characteristics, see below. IMAGE_SCN_CNT_CODE || IMAGE_SCN_MEM_EXECUTE || IMAGE_SCN_MEM_READ 
+          
+              write (Some dataSectionHeaderChunk.addr) os "data section header" [| |]
+          
+           // 000001a0  
+              writeBytes os [| 0x2euy; 0x72uy; 0x73uy; 0x72uy; 0x63uy; 0x00uy; 0x00uy; 0x00uy; |] // ".rsrc\000\000\000" 
+        //  writeBytes os [| 0x2e; 0x73; 0x64; 0x61; 0x74; 0x61; 0x00; 0x00; |] // ".sdata\000\000"  
+              writeInt32 os dataSectionSize // VirtualSize: Total size of the section when loaded into memory in bytes rounded to Section Alignment. If this value is greater than Size of Raw Data, the section is zero-padded. e.g. 0x0000000c 
+              writeInt32 os dataSectionAddr //  VirtualAddress For executable images this is the address of the first byte of the section, when loaded into memory, relative to the image base. e.g. 0x0000c000
+           // 000001b0  
+              writeInt32 os dataSectionPhysSize //  SizeOfRawData Size of the initialized data on disk in bytes, shall be a multiple of FileAlignment from the PE header. If this is less than VirtualSize the remainder of the section is zero filled. Because this field is rounded while the VirtualSize field is not it is possible for this to be greater than VirtualSize as well. When a section contains only uninitialized data, this field should be 0. e.g. 0x00000200 
+              writeInt32 os dataSectionPhysLoc // PointerToRawData QUERY: Why does ECMA say "RVA" here? Offset to section's first page within the PE file. This shall be a multiple of FileAlignment from the optional header. When a section contains only uninitialized data, this field should be 0. e.g. 0x00009800 
+           // 000001b8  
+              writeInt32 os 0x00 // PointerToRelocations RVA of Relocation section. 
+              writeInt32 os 0x00 // PointerToLinenumbers Always 0 (see Section 23.1). 
+           // 000001c0  
+              writeInt32AsUInt16 os 0x00 // NumberOfRelocations Number of relocations, set to 0 if unused. 
+              writeInt32AsUInt16 os 0x00  //  NumberOfLinenumbers Always 0 (see Section 23.1). 
+              writeBytes os [| 0x40uy; 0x00uy; 0x00uy; 0x40uy |] //  Characteristics Flags: IMAGE_SCN_MEM_READ |  IMAGE_SCN_CNT_INITIALIZED_DATA 
+          
+              write (Some relocSectionHeaderChunk.addr) os "reloc section header" [| |]
+           // 000001a0  
+              writeBytes os [| 0x2euy; 0x72uy; 0x65uy; 0x6cuy; 0x6fuy; 0x63uy; 0x00uy; 0x00uy; |] // ".reloc\000\000" 
+              writeInt32 os relocSectionSize // VirtualSize: Total size of the section when loaded into memory in bytes rounded to Section Alignment. If this value is greater than Size of Raw Data, the section is zero-padded. e.g. 0x0000000c 
+              writeInt32 os relocSectionAddr //  VirtualAddress For executable images this is the address of the first byte of the section, when loaded into memory, relative to the image base. e.g. 0x0000c000
+           // 000001b0  
+              writeInt32 os relocSectionPhysSize //  SizeOfRawData Size of the initialized reloc on disk in bytes, shall be a multiple of FileAlignment from the PE header. If this is less than VirtualSize the remainder of the section is zero filled. Because this field is rounded while the VirtualSize field is not it is possible for this to be greater than VirtualSize as well. When a section contains only uninitialized reloc, this field should be 0. e.g. 0x00000200 
+              writeInt32 os relocSectionPhysLoc // PointerToRawData QUERY: Why does ECMA say "RVA" here? Offset to section's first page within the PE file. This shall be a multiple of FileAlignment from the optional header. When a section contains only uninitialized reloc, this field should be 0. e.g. 0x00009800 
+           // 000001b8  
+              writeInt32 os 0x00 // PointerToRelocations RVA of Relocation section. 
+              writeInt32 os 0x00 // PointerToLinenumbers Always 0 (see Section 23.1). 
+           // 000001c0  
+              writeInt32AsUInt16 os 0x00 // NumberOfRelocations Number of relocations, set to 0 if unused. 
+              writeInt32AsUInt16 os 0x00  //  NumberOfLinenumbers Always 0 (see Section 23.1). 
+              writeBytes os [| 0x40uy; 0x00uy; 0x00uy; 0x42uy |] //  Characteristics Flags: IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ |  
+          
+              writePadding os "pad to text begin" (textSectionPhysLoc - headerSize)
+          
+              // TEXT SECTION: e.g. 0x200 
+          
+              let textV2P v = v - textSectionAddr + textSectionPhysLoc
+          
+              // e.g. 0x0200 
+              write (Some (textV2P importAddrTableChunk.addr)) os "import addr table" [| |]
+              writeInt32 os importNameHintTableChunk.addr 
+              writeInt32 os 0x00  // QUERY 4 bytes of zeros not 2 like ECMA  24.3.1 says 
+          
+              // e.g. 0x0208 
+
+              let flags = 
+                (if modul.IsILOnly then 0x01 else 0x00) ||| 
+                (if modul.Is32Bit then 0x02 else 0x00) ||| 
+                (if modul.Is32BitPreferred then 0x00020003 else 0x00) ||| 
+                (if (match signer with None -> false | Some s -> s.IsFullySigned) then 0x08 else 0x00)
+
+              let headerVersionMajor,headerVersionMinor = headerVersionSupportedByCLRVersion desiredMetadataVersion
+
+              writePadding os "pad to cli header" cliHeaderPadding 
+              write (Some (textV2P cliHeaderChunk.addr)) os "cli header"  [| |]
+              writeInt32 os 0x48 // size of header 
+              writeInt32AsUInt16 os headerVersionMajor // Major part of minimum version of CLR reqd. 
+              writeInt32AsUInt16 os headerVersionMinor // Minor part of minimum version of CLR reqd. ... 
+              // e.g. 0x0210 
+              writeDirectory os metadataChunk
+              writeInt32 os flags
+          
+              writeInt32 os entryPointToken 
+              write None os "rest of cli header" [| |]
+          
+              // e.g. 0x0220 
+              writeDirectory os resourcesChunk
+              writeDirectory os strongnameChunk
+              // e.g. 0x0230 
+              writeInt32 os 0x00 // code manager table, always 0 
+              writeInt32 os 0x00 // code manager table, always 0 
+              writeDirectory os vtfixupsChunk 
+              // e.g. 0x0240 
+              writeInt32 os 0x00  // export addr table jumps, always 0 
+              writeInt32 os 0x00  // export addr table jumps, always 0 
+              writeInt32 os 0x00  // managed native header, always 0 
+              writeInt32 os 0x00  // managed native header, always 0 
+          
+              writeBytes os code
+              write None os "code padding" codePadding
+          
+              writeBytes os metadata
+          
+              // write 0x80 bytes of empty space for encrypted SHA1 hash, written by SN.EXE or call to signing API 
+              if signer <> None then 
+                write (Some (textV2P strongnameChunk.addr)) os "strongname" (Array.create strongnameChunk.size 0x0uy)
+
+              write (Some (textV2P resourcesChunk.addr)) os "raw resources" [| |]
+              writeBytes os resources
+              write (Some (textV2P rawdataChunk.addr)) os "raw data" [| |]
+              writeBytes os data
+
+              writePadding os "start of import table" importTableChunkPrePadding
+
+              // vtfixups would go here 
+              write (Some (textV2P importTableChunk.addr)) os "import table" [| |]
+          
+              writeInt32 os importLookupTableChunk.addr
+              writeInt32 os 0x00
+              writeInt32 os 0x00
+              writeInt32 os mscoreeStringChunk.addr
+              writeInt32 os importAddrTableChunk.addr
+              writeInt32 os 0x00
+              writeInt32 os 0x00
+              writeInt32 os 0x00
+              writeInt32 os 0x00
+              writeInt32 os 0x00 
+        
+              write (Some (textV2P importLookupTableChunk.addr)) os "import lookup table" [| |]
+              writeInt32 os importNameHintTableChunk.addr 
+              writeInt32 os 0x00 
+              writeInt32 os 0x00 
+              writeInt32 os 0x00 
+              writeInt32 os 0x00 
+          
+
+              write (Some (textV2P importNameHintTableChunk.addr)) os "import name hint table" [| |]
+              // Two zero bytes of hint, then Case sensitive, null-terminated ASCII string containing name to import. 
+              // Shall _CorExeMain a .exe file _CorDllMain for a .dll file.
+              if isDll then 
+                  writeBytes os [| 0x00uy;  0x00uy;  0x5fuy;  0x43uy ;  0x6fuy;  0x72uy;  0x44uy;  0x6cuy;  0x6cuy;  0x4duy;  0x61uy;  0x69uy;  0x6euy;  0x00uy |]
+              else 
+                  writeBytes os [| 0x00uy;  0x00uy;  0x5fuy;  0x43uy;  0x6fuy;  0x72uy;  0x45uy;  0x78uy;  0x65uy;  0x4duy;  0x61uy;  0x69uy;  0x6euy;  0x00uy |]
+          
+              write (Some (textV2P mscoreeStringChunk.addr)) os "mscoree string"
+                [| 0x6duy;  0x73uy;  0x63uy;  0x6fuy ;  0x72uy;  0x65uy ;  0x65uy;  0x2euy ;  0x64uy;  0x6cuy ;  0x6cuy;  0x00uy ; |]
+          
+              writePadding os "end of import tab" importTableChunkPadding
+          
+              writePadding os "head of entrypoint" 0x03
+              let ep = (imageBaseReal + textSectionAddr)
+              write (Some (textV2P entrypointCodeChunk.addr)) os " entrypoint code"
+                     [| 0xFFuy; 0x25uy; (* x86 Instructions for entry *) b0 ep; b1 ep; b2 ep; b3 ep |]
+              if isItanium then 
+                  write (Some (textV2P globalpointerCodeChunk.addr)) os " itanium global pointer"
+                       [| 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy |]
+          
+              if pdbfile.IsSome then 
+                  write (Some (textV2P debugDirectoryChunk.addr)) os "debug directory" (Array.create sizeof_IMAGE_DEBUG_DIRECTORY 0x0uy)
+                  write (Some (textV2P debugDataChunk.addr)) os "debug data" (Array.create debugDataChunk.size 0x0uy)
+          
+              writePadding os "end of .text" (dataSectionPhysLoc - textSectionPhysLoc - textSectionSize)
+          
+              // DATA SECTION 
+    #if FX_NO_LINKEDRESOURCES
+    #else
+              match nativeResources with
+              | [||] -> ()
+              | resources ->
+                    write (Some (dataSectionVirtToPhys nativeResourcesChunk.addr)) os "raw native resources" [| |]
+                    writeBytes os resources
+    #endif
+
+              if dummydatap.size <> 0x0 then
+                  write (Some (dataSectionVirtToPhys dummydatap.addr)) os "dummy data" [| 0x0uy |]
+
+              writePadding os "end of .rsrc" (relocSectionPhysLoc - dataSectionPhysLoc - dataSectionSize)            
+          
+              // RELOC SECTION 
+
+              // See ECMA 24.3.2 
+              let relocV2P v = v - relocSectionAddr + relocSectionPhysLoc
+          
+              let entrypointFixupAddr = entrypointCodeChunk.addr + 0x02
+              let entrypointFixupBlock = (entrypointFixupAddr / 4096) * 4096
+              let entrypointFixupOffset = entrypointFixupAddr - entrypointFixupBlock
+              let reloc = (if modul.Is64Bit then 0xA000 (* IMAGE_REL_BASED_DIR64 *) else 0x3000 (* IMAGE_REL_BASED_HIGHLOW *)) ||| entrypointFixupOffset
+              // For the itanium, you need to set a relocation entry for the global pointer
+              let reloc2 = 
+                  if not isItanium then 
+                      0x0
+                  else
+                      0xA000 ||| (globalpointerCodeChunk.addr - ((globalpointerCodeChunk.addr / 4096) * 4096))
+               
+              write (Some (relocV2P baseRelocTableChunk.addr)) os "base reloc table" 
+                  [| b0 entrypointFixupBlock; b1 entrypointFixupBlock; b2 entrypointFixupBlock; b3 entrypointFixupBlock;
+                     0x0cuy; 0x00uy; 0x00uy; 0x00uy;
+                     b0 reloc; b1 reloc; 
+                     b0 reloc2; b1 reloc2; |]
+              writePadding os "end of .reloc" (imageEndSectionPhysLoc - relocSectionPhysLoc - relocSectionSize)
+
+              os.Dispose()
+          
+              try 
+                  FileSystemUtilites.setExecutablePermission outfile
+              with _ -> 
+                  ()
+              pdbData,debugDirectoryChunk,debugDataChunk,textV2P,mappings
+
+            // Looks like a finally
+            with e ->   
+                (try 
+                    os.Dispose()
+                    FileSystem.FileDelete outfile 
+                 with _ -> ()) 
                 reraise()
-        with e -> 
-            reraise()
 
-    end      
-    ignore debugDataChunk
-    reportTime showTimes "Finalize PDB"
+    let writeBinaryAndReportMappings (outfile, ilg, pdbfile: string option, signer: ILStrongNameSigner option, portablePDB, 
+                                      fixupOverlappingSequencePoints, emitTailcalls, showTimes, dumpDebugInfo) modul noDebugData =
+        // Store the public key from the signer into the manifest.  This means it will be written 
+        // to the binary and also acts as an indicator to leave space for delay sign 
 
-    /// Sign the binary.  No further changes to binary allowed past this point! 
-    match signer with 
-    | None -> ()
-    | Some s -> 
-        try 
-            s.SignFile outfile
-            s.Close() 
-        with e -> 
-            failwith ("Warning: A call to SignFile failed ("+e.Message+")")
-            (try s.Close() with _ -> ())
-            (try FileSystem.FileDelete outfile with _ -> ()) 
-            ()
+        reportTime showTimes "Write Started";
+        let isDll = modul.IsDLL
+    
+        let signer = 
+            match signer,modul.Manifest with
+            | Some _, _ -> signer
+            | _, None -> signer
+            | None, Some {PublicKey=Some pubkey} -> 
+                (dprintn "Note: The output assembly will be delay-signed using the original public";
+                 dprintn "Note: key. In order to load it you will need to either sign it with";
+                 dprintn "Note: the original private key or to turn off strong-name verification";
+                 dprintn "Note: (use sn.exe from the .NET Framework SDK to do this, e.g. 'sn -Vr *').";
+                 dprintn "Note: Alternatively if this tool supports it you can provide the original";
+                 dprintn "Note: private key when converting the assembly, assuming you have access to";
+                 dprintn "Note: it.";
+                 Some (ILStrongNameSigner.OpenPublicKey pubkey))
+            | _ -> signer
 
-    reportTime showTimes "Signing Image"
-    //Finished writing and signing the binary and debug info...
-    mappings
+        let modul = 
+            let pubkey =
+              match signer with 
+              | None -> None
+              | Some s -> 
+                 try Some s.PublicKey  
+                 with e ->     
+                   failwith ("A call to StrongNameGetPublicKey failed ("+e.Message+")"); 
+                   None
+            begin match modul.Manifest with 
+            | None -> () 
+            | Some m -> 
+               if m.PublicKey <> None && m.PublicKey <> pubkey then 
+                 dprintn "Warning: The output assembly is being signed or delay-signed with a strong name that is different to the original."
+            end;
+            { modul with Manifest = match modul.Manifest with None -> None | Some m -> Some {m with PublicKey = pubkey} }
+
+        let os = 
+            try
+                // Ensure the output directory exists otherwise it will fail
+                let dir = Path.GetDirectoryName(outfile)
+                if not (Directory.Exists(dir)) then Directory.CreateDirectory(dir) |>ignore
+                new BinaryWriter(FileSystem.FileStreamCreateShim(outfile))
+            with e -> 
+                failwith ("Could not open file for writing (binary mode): " + outfile)    
+
+        let pdbData,debugDirectoryChunk,debugDataChunk,textV2P,mappings =
+            writeBinaryAndReportMappingsImpl (outfile, ilg, pdbfile, signer, emitTailcalls, showTimes) modul noDebugData isDll os
+
+        reportTime showTimes "Writing Image"
+
+        if dumpDebugInfo then logDebugInfo outfile pdbData
+
+        // Now we've done the bulk of the binary, do the PDB file and fixup the binary. 
+        begin match pdbfile with
+        | None -> ()
+    #if ENABLE_MONO_SUPPORT
+        | Some fmdb when runningOnMono -> 
+            writeMdbInfo fmdb outfile pdbData
+    #endif
+        | Some fpdb -> 
+            try 
+                let idd = 
+    #if FX_NO_PDB_WRITER
+                    ignore portablePDB
+                    writePortablePdbInfo fixupOverlappingSequencePoints showTimes fpdb pdbData
+    #else
+                    if portablePDB then 
+                        writePortablePdbInfo fixupOverlappingSequencePoints showTimes fpdb pdbData
+                    else
+                        writePdbInfo fixupOverlappingSequencePoints showTimes outfile fpdb pdbData
+    #endif
+                reportTime showTimes "Generate PDB Info"
+
+                // Now we have the debug data we can go back and fill in the debug directory in the image 
+                let fs2 = FileSystem.FileStreamWriteExistingShim(outfile)
+                let os2 = new BinaryWriter(fs2)
+                try 
+                    // write the IMAGE_DEBUG_DIRECTORY 
+                    os2.BaseStream.Seek (int64 (textV2P debugDirectoryChunk.addr), SeekOrigin.Begin) |> ignore
+                    writeInt32 os2 idd.iddCharacteristics           // IMAGE_DEBUG_DIRECTORY.Characteristics 
+                    writeInt32 os2 timestamp
+                    writeInt32AsUInt16 os2 idd.iddMajorVersion
+                    writeInt32AsUInt16 os2 idd.iddMinorVersion
+                    writeInt32 os2 idd.iddType
+                    writeInt32 os2 idd.iddData.Length               // IMAGE_DEBUG_DIRECTORY.SizeOfData 
+                    writeInt32 os2 debugDataChunk.addr              // IMAGE_DEBUG_DIRECTORY.AddressOfRawData 
+                    writeInt32 os2 (textV2P debugDataChunk.addr)    // IMAGE_DEBUG_DIRECTORY.PointerToRawData 
+
+                    // write the debug raw data as given us by the PDB writer 
+                    os2.BaseStream.Seek (int64 (textV2P debugDataChunk.addr), SeekOrigin.Begin) |> ignore
+                    if debugDataChunk.size < idd.iddData.Length then failwith "Debug data area is not big enough.  Debug info may not be usable"
+                    writeBytes os2 idd.iddData
+                    os2.Dispose()
+                with e -> 
+                    failwith ("Error while writing debug directory entry: "+e.Message)
+                    (try os2.Dispose(); FileSystem.FileDelete outfile with _ -> ()) 
+                    reraise()
+            with e -> 
+                reraise()
+
+        end      
+        ignore debugDataChunk
+        reportTime showTimes "Finalize PDB"
+
+        /// Sign the binary.  No further changes to binary allowed past this point! 
+        match signer with 
+        | None -> ()
+        | Some s -> 
+            try 
+                s.SignFile outfile
+                s.Close() 
+            with e -> 
+                failwith ("Warning: A call to SignFile failed ("+e.Message+")")
+                (try s.Close() with _ -> ())
+                (try FileSystem.FileDelete outfile with _ -> ()) 
+                ()
+
+        reportTime showTimes "Signing Image"
+        //Finished writing and signing the binary and debug info...
+        mappings
 
 
 type options =
@@ -4240,6 +4243,6 @@ type options =
 
 
 let WriteILBinary (outfile, (args: options), modul, noDebugData) =
-    ignore (writeBinaryAndReportMappings (outfile, args.ilg, args.pdbfile, args.signer, args.portablePDB, 
+    ignore (WriteBinaryAndReportMappings.writeBinaryAndReportMappings (outfile, args.ilg, args.pdbfile, args.signer, args.portablePDB, 
                                           args.fixupOverlappingSequencePoints, args.emitTailcalls, args.showTimes, 
                                           args.dumpDebugInfo) modul noDebugData)
