@@ -40,7 +40,7 @@ type LightSyntaxStatus(initial:bool,warn:bool) =
 /// Manage lexer resources (string interning)
 [<Sealed>]
 type LexResourceManager() =
-    let strings = new System.Collections.Generic.Dictionary<string,Parser.token>(100)
+    let strings = new System.Collections.Generic.Dictionary<string,Parser.token>(100, System.StringComparer.Ordinal)
     member x.InternIdentifierToken(s) = 
         let mutable res = Unchecked.defaultof<_> 
         let ok = strings.TryGetValue(s,&res)  
