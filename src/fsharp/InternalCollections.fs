@@ -220,6 +220,5 @@ type internal List =
 
     /// Return each distinct item in the list using reference equality.
     static member referenceDistinct( l : 'T list) : 'T list when 'T : not struct =
-        let set = System.Collections.Generic.Dictionary<'T,bool>(HashIdentity.Reference)
-        l |> List.iter(fun i->set.Add(i,true))
-        set |> Seq.map(fun kv->kv.Key) |> List.ofSeq
+        System.Collections.Generic.HashSet<_>(l, HashIdentity.Reference)
+        |> List.ofSeq
