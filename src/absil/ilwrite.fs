@@ -3060,8 +3060,8 @@ type BinaryChunk =
 let chunk sz next = ({addr=next; size=sz},next + sz) 
 let nochunk next = ({addr= 0x0;size= 0x0; } ,next)
 
-let count f arr = 
-    Array.fold (fun x y -> x + f y) 0x0 arr 
+let inline count (f : _ -> int) arr =
+    Array.sumBy f arr
 
 module FileSystemUtilites = 
     open System.Reflection
@@ -3108,7 +3108,7 @@ let writeILMetadataAndCode (generatePdb,desiredMetadataVersion,ilg,emitTailcalls
     let codeSize = code.Length
     let alignedCodeSize = align 0x4 codeSize
     let codep,next = chunk codeSize next
-    let codePadding = Array.create (alignedCodeSize - codeSize) 0x0uy
+    let codePadding = Array.zeroCreate (alignedCodeSize - codeSize)
     let _codePaddingChunk,next = chunk codePadding.Length next
 
    // Now layout the chunks of metadata and IL 
@@ -3179,12 +3179,12 @@ let writeILMetadataAndCode (generatePdb,desiredMetadataVersion,ilg,emitTailcalls
     let guidAddress n =   (if n = 0 then 0 else (n - 1) * 0x10 + 0x01)
 
     let stringAddressTable = 
-        let tab = Array.create (strings.Length + 1) 0
-        let pos = ref 1
+        let tab = Array.zeroCreate (strings.Length + 1)
+        let mutable pos = 1
         for i = 1 to strings.Length do
-            tab.[i] <- !pos
+            tab.[i] <- pos
             let s = strings.[i - 1]
-            pos := !pos + s.Length
+            pos <- pos + s.Length
         tab
 
     let stringAddress n = 
@@ -3192,13 +3192,13 @@ let writeILMetadataAndCode (generatePdb,desiredMetadataVersion,ilg,emitTailcalls
         stringAddressTable.[n]
     
     let userStringAddressTable = 
-        let tab = Array.create (Array.length userStrings + 1) 0
-        let pos = ref 1
+        let tab = Array.zeroCreate (Array.length userStrings + 1)
+        let mutable pos = 1
         for i = 1 to Array.length userStrings do
-            tab.[i] <- !pos
+            tab.[i] <- pos
             let s = userStrings.[i - 1]
             let n = s.Length + 1
-            pos := !pos + n + ByteBuffer.Z32Size n
+            pos <- pos + n + ByteBuffer.Z32Size n
         tab
 
     let userStringAddress n = 
@@ -3206,12 +3206,12 @@ let writeILMetadataAndCode (generatePdb,desiredMetadataVersion,ilg,emitTailcalls
         userStringAddressTable.[n]
     
     let blobAddressTable = 
-        let tab = Array.create (blobs.Length + 1) 0
-        let pos = ref 1
+        let tab = Array.zeroCreate (blobs.Length + 1)
+        let mutable pos = 1
         for i = 1 to blobs.Length do
-            tab.[i] <- !pos
+            tab.[i] <- pos
             let blob = blobs.[i - 1]
-            pos := !pos + blob.Length + ByteBuffer.Z32Size blob.Length
+            pos <- pos + blob.Length + ByteBuffer.Z32Size blob.Length
         tab
 
     let blobAddress n = 
@@ -4042,7 +4042,7 @@ let writeBinaryAndReportMappings (outfile, ilg, pdbfile: string option, signer: 
           
           // write 0x80 bytes of empty space for encrypted SHA1 hash, written by SN.EXE or call to signing API 
           if signer <> None then 
-            write (Some (textV2P strongnameChunk.addr)) os "strongname" (Array.create strongnameChunk.size 0x0uy)
+            write (Some (textV2P strongnameChunk.addr)) os "strongname" (Array.zeroCreate strongnameChunk.size)
 
           write (Some (textV2P resourcesChunk.addr)) os "raw resources" [| |]
           writeBytes os resources
@@ -4095,8 +4095,8 @@ let writeBinaryAndReportMappings (outfile, ilg, pdbfile: string option, signer: 
                    [| 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy; 0x0uy |]
           
           if pdbfile.IsSome then 
-              write (Some (textV2P debugDirectoryChunk.addr)) os "debug directory" (Array.create sizeof_IMAGE_DEBUG_DIRECTORY 0x0uy)
-              write (Some (textV2P debugDataChunk.addr)) os "debug data" (Array.create debugDataChunk.size 0x0uy)
+              write (Some (textV2P debugDirectoryChunk.addr)) os "debug directory" (Array.zeroCreate sizeof_IMAGE_DEBUG_DIRECTORY)
+              write (Some (textV2P debugDataChunk.addr)) os "debug data" (Array.zeroCreate debugDataChunk.size)
           
           writePadding os "end of .text" (dataSectionPhysLoc - textSectionPhysLoc - textSectionSize)
           
