@@ -40,9 +40,6 @@ let _ = if logging then dprintn "* warning: Il.logging is on"
 
 let isNil x = match x with [] -> true | _ -> false
 let nonNil x = match x with [] -> false | _ -> true
-let int_order = LanguagePrimitives.FastGenericComparer<int>
-
-let notlazy v = Lazy.CreateFromValue v
 
 /// A little ugly, but the idea is that if a data structure does not 
 /// contain lazy values then we don't add laziness.  So if the thing to map  
@@ -79,10 +76,10 @@ let rec splitNamespaceAux (nm:string) =
 
 /// Global State. All namespace splits ever seen
 // ++GLOBAL MUTABLE STATE
-let memoizeNamespaceTable = new ConcurrentDictionary<string,string list>()
+let memoizeNamespaceTable = new ConcurrentDictionary<string,string list>(HashIdentity.Structural)
 
 //  ++GLOBAL MUTABLE STATE
-let memoizeNamespaceRightTable = new ConcurrentDictionary<string,string option * string>()
+let memoizeNamespaceRightTable = new ConcurrentDictionary<string,string option * string>(HashIdentity.Structural)
 
 
 let splitNamespace nm =
@@ -173,7 +170,14 @@ type LazyOrderedMultiMap<'Key,'Data when 'Key : equality>(keyf : 'Data -> 'Key, 
     let quickMap= 
         lazyItems |> lazyMap (fun entries -> 
             let t = new Dictionary<_,_>(entries.Length, HashIdentity.Structural)
-            do entries |> List.iter (fun y -> let key = keyf y in t.[key] <- y :: (if t.ContainsKey(key) then t.[key] else [])) 
+            for y in entries do
+                let key = keyf y
+                t.[key] <-
+                    match t.TryGetValue key with
+                    | true, existing ->
+                        y :: existing
+                    | false, _ ->
+                        [ y ]
             t)
 
     member self.Entries() = lazyItems.Force()
@@ -182,7 +186,12 @@ type LazyOrderedMultiMap<'Key,'Data when 'Key : equality>(keyf : 'Data -> 'Key, 
     
     member self.Filter(f) = new LazyOrderedMultiMap<'Key,'Data>(keyf, lazyItems |> lazyMap (List.filter f))
 
-    member self.Item with get(x) = let t = quickMap.Force() in if t.ContainsKey x then t.[x] else []
+    member self.Item
+        with get(x) =
+            let t = quickMap.Force()
+            match t.TryGetValue x with
+            | true, v -> v
+            | false, _ -> []
 
 
 //---------------------------------------------------------------------
@@ -268,7 +277,7 @@ module SHA1 =
         let mutable c = 0
         let mutable d = 0
         let mutable e = 0
-        let w = Array.create 80 0x00
+        let w = Array.zeroCreate 80
         while (not sha.eof) do
             for i = 0 to 15 do
                 w.[i] <- shaRead32 sha
@@ -1517,14 +1526,16 @@ type ILMethodDefs(f : (unit -> ILMethodDef[])) =
     let mutable array = InlineDelayInit<_>(f)
     let mutable dict = InlineDelayInit<_>(fun () -> 
             let arr = array.Value
-            let t = Dictionary<_,_>()
+            let t = Dictionary<_,_>(HashIdentity.Structural)
             for i = arr.Length - 1 downto 0 do 
                 let y = arr.[i]
                 let key = y.Name
-                if t.ContainsKey key then 
-                    t.[key] <- y :: t.[key]
-                else
-                    t.[key] <- [ y ]
+                t.[key] <-
+                    match t.TryGetValue key with
+                    | true, existing ->
+                        y :: existing
+                    | false, _ ->
+                        [ y ]
             t)
 
     interface IEnumerable with 
@@ -1535,7 +1546,10 @@ type ILMethodDefs(f : (unit -> ILMethodDef[])) =
 
     member x.AsArray = array.Value
     member x.AsList = x.AsArray |> Array.toList
-    member x.FindByName nm  =  if dict.Value.ContainsKey nm then dict.Value.[nm] else []
+    member x.FindByName nm  =
+        match dict.Value.TryGetValue nm with
+        | true, v -> v
+        | false, _ -> []
     member x.FindByNameAndArity (nm,arity) = x.FindByName nm |> List.filter (fun x -> x.Parameters.Length = arity) 
 
 
@@ -1693,15 +1707,18 @@ and [<Sealed>] ILTypeDefs(f : unit -> (string list * string * ILAttributes * Laz
                 let key = nsp, nm
                 t.[key] <- ltd
             t)
+    // Lazily initialize (then cache) the ILTypeDef[] to avoid repeatedly re-creating it.
+    let mutable ltds = InlineDelayInit<_>(fun () ->
+        [| for (_,_,_,ltd) in array.Value -> ltd.Force() |])
 
-    member x.AsArray = [| for (_,_,_,ltd) in array.Value -> ltd.Force() |]
+    member x.AsArray = ltds.Value
     member x.AsList = x.AsArray |> Array.toList
 
     interface IEnumerable with 
         member x.GetEnumerator() = ((x :> IEnumerable<ILTypeDef>).GetEnumerator() :> IEnumerator)
 
     interface IEnumerable<ILTypeDef> with 
-        member x.GetEnumerator() = 
+        member x.GetEnumerator() =
             (seq { for (_,_,_,ltd) in array.Value -> ltd.Force() }).GetEnumerator()
     
     member x.AsArrayOfLazyTypeDefs = array.Value
@@ -3452,37 +3469,37 @@ let bits_of_float (x:float) = System.BitConverter.DoubleToInt64Bits(x)
 let ieee32AsBytes i = i32AsBytes (bits_of_float32 i)
 let ieee64AsBytes i = i64AsBytes (bits_of_float i)
 
-let et_END = 0x00uy
-let et_VOID = 0x01uy
-let et_BOOLEAN = 0x02uy
-let et_CHAR = 0x03uy
-let et_I1 = 0x04uy
-let et_U1 = 0x05uy
-let et_I2 = 0x06uy
-let et_U2 = 0x07uy
-let et_I4 = 0x08uy
-let et_U4 = 0x09uy
-let et_I8 = 0x0Auy
-let et_U8 = 0x0Buy
-let et_R4 = 0x0Cuy
-let et_R8 = 0x0Duy
-let et_STRING = 0x0Euy
-let et_PTR = 0x0Fuy
-let et_BYREF = 0x10uy
-let et_VALUETYPE      = 0x11uy
-let et_CLASS          = 0x12uy
-let et_VAR            = 0x13uy
-let et_ARRAY          = 0x14uy
-let et_WITH           = 0x15uy
-let et_TYPEDBYREF     = 0x16uy
-let et_I              = 0x18uy
-let et_U              = 0x19uy
-let et_FNPTR          = 0x1Buy
-let et_OBJECT         = 0x1Cuy
-let et_SZARRAY        = 0x1Duy
-let et_MVAR           = 0x1Euy
-let et_CMOD_REQD      = 0x1Fuy
-let et_CMOD_OPT       = 0x20uy
+let [<Literal>] et_END = 0x00uy
+let [<Literal>] et_VOID = 0x01uy
+let [<Literal>] et_BOOLEAN = 0x02uy
+let [<Literal>] et_CHAR = 0x03uy
+let [<Literal>] et_I1 = 0x04uy
+let [<Literal>] et_U1 = 0x05uy
+let [<Literal>] et_I2 = 0x06uy
+let [<Literal>] et_U2 = 0x07uy
+let [<Literal>] et_I4 = 0x08uy
+let [<Literal>] et_U4 = 0x09uy
+let [<Literal>] et_I8 = 0x0Auy
+let [<Literal>] et_U8 = 0x0Buy
+let [<Literal>] et_R4 = 0x0Cuy
+let [<Literal>] et_R8 = 0x0Duy
+let [<Literal>] et_STRING = 0x0Euy
+let [<Literal>] et_PTR = 0x0Fuy
+let [<Literal>] et_BYREF = 0x10uy
+let [<Literal>] et_VALUETYPE      = 0x11uy
+let [<Literal>] et_CLASS          = 0x12uy
+let [<Literal>] et_VAR            = 0x13uy
+let [<Literal>] et_ARRAY          = 0x14uy
+let [<Literal>] et_WITH           = 0x15uy
+let [<Literal>] et_TYPEDBYREF     = 0x16uy
+let [<Literal>] et_I              = 0x18uy
+let [<Literal>] et_U              = 0x19uy
+let [<Literal>] et_FNPTR          = 0x1Buy
+let [<Literal>] et_OBJECT         = 0x1Cuy
+let [<Literal>] et_SZARRAY        = 0x1Duy
+let [<Literal>] et_MVAR           = 0x1Euy
+let [<Literal>] et_CMOD_REQD      = 0x1Fuy
+let [<Literal>] et_CMOD_OPT       = 0x20uy
 
 let formatILVersion ((a,b,c,d):ILVersionInfo) = sprintf "%d.%d.%d.%d" (int a) (int b) (int c) (int d)
 
