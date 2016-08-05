@@ -23,10 +23,6 @@ let addMethodGeneratedAttrsToTypeDef ilg tdef =
 // by compiling down to code pointers, classes etc.
 // -------------------------------------------------------------------- 
 
-let notlazy v = Lazy.CreateFromValue v
-let logging = false 
-let _ = if logging then dprintn "*** warning: Clo2_erase.logging is on"
-
 let rec stripUpTo n test dest x =
     if n = 0 then ([],x) else 
     if test x then 
