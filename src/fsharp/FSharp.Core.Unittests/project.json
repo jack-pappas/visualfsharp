@@ -11,7 +11,7 @@
     "Microsoft.FSharp.Core.netcore": "1.0.0-alpha-*",
     "System.ValueTuple": "4.0.0-rc3-24212-01",
     "FsCheck": "2.6.2",
-    "Microsoft.FSharp.TupleSample": "1.0.0-alpha-161112",
+    "Microsoft.FSharp.TupleSample": "1.0.0-alpha-161112"
   },
   "runtimes": {
     "win7-x86": {},
